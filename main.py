@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 # from fastapi.staticfiles import StaticFiles
 
 from server.lifespan import lifespan
-from server.modules import ModuleManager
 
 app = FastAPI(lifespan=lifespan)
 # app.include_router(web_router.router)

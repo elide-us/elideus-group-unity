@@ -13,6 +13,12 @@ class EnvironmentVariablesModule(BaseModule):
     super().__init__(app)
     self._env: dict[str, str] = {}
 
+  async def on_seal(self):
+    pass
+
+  async def on_drain(self):
+    pass
+  
   async def startup(self):
     self._load_all()
     self.mark_ready()
