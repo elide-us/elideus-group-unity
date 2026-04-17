@@ -7,12 +7,16 @@ from server.modules import ModuleManager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-  module_manager = ModuleManager(app)
-  await module_manager.startup_all()
-  app.state.module_manager = module_manager
+  modules = ModuleManager(app)
+  await modules.startup()
+
   try:
-    yield # This is the point that Azure Web App stops executing code, everything after here is only useful in local development environment
+    # mcp_module = app.state.mcp_io_service
+    # if mcp_module and mcp_module.session_manager:
+    #   async with mcp_module.session_manager.run():
+    #     yield
+    # else:
+    #   yield
+    yield
   except Exception:
-    logging.exception('lifespan failed to yield')
-  finally:
-    await module_manager.shutdown_all()
+    logging.exception("lifespan failed to yield")

@@ -1,9 +1,9 @@
 import logging, aioodbc, json
 
-from . import BaseDatabaseProvider
+from . import DatabaseTransactionProvider
 
 
-class MssqlProvider(BaseDatabaseProvider):
+class MssqlProvider(DatabaseTransactionProvider):
   async def connect(self):
     self.pool = await aioodbc.create_pool(dsn=self._dsn, minsize=1, maxsize=5)
     logging.info("Connection pool created")
