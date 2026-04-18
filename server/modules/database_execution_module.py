@@ -7,6 +7,8 @@ from . import BaseModule
 from .environment_variables_module import EnvironmentVariablesModule
 from .database_execution_providers import DatabaseTransactionProvider
 
+logger = logging.getLogger(__name__.split('.')[-1])
+
 # ----------------------------------------------------------------------------
 # DatabaseExecutionModule
 # ----------------------------------------------------------------------------
@@ -73,18 +75,18 @@ class DatabaseExecutionModule(BaseModule):
 
     provider_name = env.get("SQL_PROVIDER")
     if provider_name is None:
-      logging.error("Environment variable: 'SQL_PROVIDER' is not present.")
+      logger.error("Variable '%s' is not present.", provider_name)
       return
     
     if not provider_name:
-      logging.error("Environment Variable: 'SQL_PROVIDER' is not set. You must configure one database provider.")
+      logger.error("Variable '%s' is not set. You must configure one database provider.", provider_name)
       return
 
     if provider_name == "AZURE_SQL_CONNECTION_STRING":
       from .database_execution_providers.mssql_transaction_provider import MssqlProvider
       dsn = env.get(provider_name)
       if dsn is None:
-        logging.error("DatabaseExecutionModule: %s not available", provider_name)
+        logger.error("Provider '%s' not available", provider_name)
         return
       self._provider = MssqlProvider(dsn)
 
@@ -105,7 +107,7 @@ class DatabaseExecutionModule(BaseModule):
     #   self._provider = MysqlProvider(dsn)
 
     else:
-      logging.error("DatabaseExecutionModule: Unknown provider '%s'", provider_name)
+      logger.error("Unknown provider '%s'", provider_name)
       return
 
     await self._provider.connect()
@@ -118,18 +120,19 @@ class DatabaseExecutionModule(BaseModule):
   
   async def query(self, query: str, params: tuple | None = None) -> Any:
     if self._provider is None:
-      logging.error("DatabaseExecutionModule: No active provider")
+      logger.error("No active provider")
       return None
     return await self._provider.query(query, params)
 
   async def execute(self, query: str, params: tuple | None = None) -> int:
     if self._provider is None:
-      logging.error("DatabaseExecutionModule: No active provider")
+      logger.error("No active provider")
       return 0
     return await self._provider.execute(query, params)
   
   def get_base_provider(self) -> DatabaseTransactionProvider | None:
     if self._provider is None:
-      logging.error("DatabaseExecutionModule: No active provider")
+      logger.error("No active provider")
       return None
     return self._provider
+  

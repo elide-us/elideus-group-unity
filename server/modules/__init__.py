@@ -5,6 +5,7 @@ import asyncio, logging, os, importlib
 
 from server.helpers import snake_to_pascal
 
+logger = logging.getLogger(__name__.split('.')[-1])
 
 MODULES_FOLDER = os.path.dirname(__file__)
 
@@ -104,9 +105,9 @@ class BaseModule(ABC):
     try:
       await self._hook_install_seed_package()
     except Exception as e:
-      logging.error("%s: _hook_install_seed_pacakge failed: %s", self.__class__.__name__, e)
+      logger.error("%s: _hook_install_seed_pacakge failed: %s", self.__class__.__name__, e)
       return
-    logging.info("%s: Sealed", self.__class__.__name__)
+    logger.info("%s: Sealed", self.__class__.__name__)
 
   @abstractmethod
   async def on_drain(self):
@@ -217,7 +218,7 @@ class ModuleManager:
   async def restart(self):
     for module_class in self._instances.keys():
       await self._restart(module_class)
-    logging.info("[ModuleManager] restart complete")
+    logger.info("Restart complete")
 
   async def _restart(self, module_type: Type[T]) -> T:
     instance = self._get_module(module_type)
@@ -230,7 +231,7 @@ class ModuleManager:
   def _get_module(self, module_type: Type[T]) -> T:
     instance = self._instances.get(module_type)
     if instance is None:
-      logging.error("Module '%s' not registered", module_type.__name__)
+      logger.error("'%s' not registered", module_type.__name__)
       return None
     return instance
 
@@ -246,7 +247,7 @@ class ModuleManager:
       module = importlib.import_module(module_path)
 
       if not hasattr(module, class_name):
-        logging.error("Module '%s' missing expected class '%s'", file_stem, class_name)
+        logger.error("Module '%s' missing expected class '%s'", file_stem, class_name)
         continue
 
       module_class = getattr(module, class_name)
@@ -258,17 +259,17 @@ class ModuleManager:
 
   def _on_startup_init(self):
     self._discover_and_register()
-    logging.info("[ModuleManager] on_startup_init — %d modules registered", len(self._instances))
+    logger.info("on_startup_init - %d modules registered", len(self._instances))
 
   async def _on_startup_all(self):
     async def _start_module(module_class: type, module: BaseModule):
       await module.startup()
-      logging.info("[ModuleManager] %s started", module_class.__name__)
+      logger.info("'%s' started", module_class.__name__)
 
     await asyncio.gather(*(
       _start_module(module_class, module) for module_class, module in self._instances.items()
     ))
-    logging.info("[ModuleManager] on_startup_all successful")
+    logger.info("on_startup_all successful")
 
   async def _on_startup_complete(self):
     async def _on_seal_module(module: BaseModule):
@@ -279,7 +280,7 @@ class ModuleManager:
     ))
 
     self._sealed = True
-    logging.info("[ModuleManager] on_startup_complete — sealed")
+    logger.info("on_startup_complete - sealed")
 
   # -- Shutdown --------------------------------------------------------------
 
@@ -290,20 +291,20 @@ class ModuleManager:
     await asyncio.gather(*(
       _on_drain_module(module) for module in self._instances.values()
     ))
-    logging.info("[ModuleManager] on_shutdown_init — %d modules drained", len(self._instances))
+    logger.info("on_shutdown_init - %d modules drained", len(self._instances))
 
   async def _on_shutdown_all(self):
     async def _stop_module(module_class: type, module: BaseModule):
       await module.shutdown()
-      logging.info("[ModuleManager] %s stopped", module_class.__name__)
+      logger.info("'%s' stopped", module_class.__name__)
 
     await asyncio.gather(*(
       _stop_module(module_class, module) for module_class, module in self._instances.items()
     ))
     self._instances.clear()
-    logging.info("[ModuleManager] on_shutdown_all successful")
+    logger.info("on_shutdown_all successful")
 
   def _on_shutdown_complete(self):
     self._sealed = False
-    logging.info("[ModuleManager] on_shutdown_complete — unsealed")
+    logger.info("on_shutdown_complete - unsealed")
     

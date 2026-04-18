@@ -8,8 +8,10 @@ from .database_execution_module import DatabaseExecutionModule
 from .environment_variables_module import EnvironmentVariablesModule
 from server.helpers import deterministic_guid
 
+logger = logging.getLogger(__name__.split('.')[-1])
+
 # ----------------------------------------------------------------------------
-# SystemEnumModule
+# [ServiceEnumModule]
 # ----------------------------------------------------------------------------
 # Enumeration lookup backed by `system_objects_enums`.
 #
@@ -49,7 +51,7 @@ from server.helpers import deterministic_guid
 #   ```mermaid
 #   sequenceDiagram
 #     participant Caller
-#     participant Enum as SystemEnumModule
+#     participant Enum as [ServiceEnumModule]
 #     participant Cache as enum cache
 #     participant Exec as DatabaseExecutionModule
 #
@@ -68,7 +70,7 @@ from server.helpers import deterministic_guid
 #
 # ----------------------------------------------------------------------------
 
-class SystemEnumModule(BaseModule):
+class ServiceEnumModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
     self._cache: dict[str, dict[str, Any]] = {}
@@ -84,18 +86,18 @@ class SystemEnumModule(BaseModule):
 
     ns = env.get("NS_HASH")
     if ns is None:
-      logging.error("SystemEnumModule: NS_HASH not set")
+      logger.error("NS_HASH not set")
       return
     self._ns_hash = uuid.UUID(ns)
 
     bootstrap_sql = """
       SELECT key_guid, pub_enum_type, pub_name, pub_value
-      FROM system_objects_enums
+      FROM service_enums
       FOR JSON PATH;
     """
     raw = await self._db.query(bootstrap_sql)
     if raw is None:
-      logging.warning("SystemEnumModule: No enum rows found (empty table)")
+      logger.warning("No enum rows found (empty table)")
       self.mark_ready()
       return
 
@@ -107,7 +109,7 @@ class SystemEnumModule(BaseModule):
         "value": entry["pub_value"]
       }
 
-    logging.info("SystemEnumModule: Loaded %d enum entries", len(self._cache))
+    logger.info("Loaded %d enum entries", len(self._cache))
     self.mark_ready()
 
   async def on_seal(self):
@@ -131,7 +133,7 @@ class SystemEnumModule(BaseModule):
     """
     raw = await self._db.query(sql, (guid,))
     if raw is None:
-      logging.error("SystemEnumModule: Unable to load enum by guid '%s'", guid)
+      logging.error("Unable to load enum by guid '%s'", guid)
       return None
     self._cache[raw["key_guid"]] = {
       "enum_type": raw["pub_enum_type"],
@@ -147,7 +149,7 @@ class SystemEnumModule(BaseModule):
       return entry["value"]
     entry = await self._load_enum(guid)
     if entry is None:
-      logging.error("SystemEnumModule: Enum '%s:%s' not found", enum_type, name)
+      logging.error("Enum '%s:%s' not found", enum_type, name)
       return None
     return entry["value"]
 
@@ -157,7 +159,7 @@ class SystemEnumModule(BaseModule):
   def get_by_guid(self, guid: str) -> dict[str, Any] | None:
     entry = self._cache.get(guid)
     if entry is None:
-      logging.error("SystemEnumModule: GUID '%s' not in cache", guid)
+      logging.error("GUID '%s' not in cache", guid)
     return entry
 
   def list_type(self, enum_type: str) -> list[dict[str, Any]]:
@@ -169,4 +171,4 @@ class SystemEnumModule(BaseModule):
 
   def flush(self):
     self._cache.clear()
-    logging.info("SystemEnumModule: Cache flushed")
+    logging.info("Cache flushed")

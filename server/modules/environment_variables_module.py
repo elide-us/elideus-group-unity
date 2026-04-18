@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from . import BaseModule
 
 load_dotenv()
-
+logger = logging.getLogger(__name__.split('.')[-1])
 
 class EnvironmentVariablesModule(BaseModule):
   def __init__(self, app: FastAPI):
@@ -38,17 +38,17 @@ class EnvironmentVariablesModule(BaseModule):
     for var in required:
       value = os.getenv(var)
       if value is None:
-        logging.warning("Environment variable: '%s' is not present", var)
+        logger.warning("Variable: '%s' is not present", var)
         continue
       if not value:
-        logging.warning("Environment Variable: %s is not set", var)
+        logger.warning("Variable: %s is not set", var)
         continue
       self._env[var] = value
 
-    logging.info("[Module] EnvironmentVariablesModule loaded %d/%d variables", len(self._env), len(required))
+    logger.info("Loaded %d/%d variables", len(self._env), len(required))
 
   def get(self, var_name: str) -> str | None:
     value = self._env.get(var_name)
     if value is None:
-      logging.error("Environment variable '%s' not available", var_name)
+      logger.error("Variable '%s' not available", var_name)
     return value

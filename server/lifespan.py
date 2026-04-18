@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 
 from server.modules import ModuleManager
 
+logger = logging.getLogger(__name__.split('.')[-1])
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
   modules = ModuleManager(app)

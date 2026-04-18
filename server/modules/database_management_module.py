@@ -8,6 +8,7 @@ from .database_execution_module import DatabaseExecutionModule
 from .system_configuration_module import SystemConfigurationModule
 from .database_execution_providers import DatabaseManagementProvider
 
+logger = logging.getLogger(__name__.split('.')[-1])
 
 class DatabaseManagementModule(BaseModule):
   def __init__(self, app: FastAPI):
@@ -33,7 +34,7 @@ class DatabaseManagementModule(BaseModule):
 
     base = exec_mod.get_base_provider()
     if base is None:
-      logging.error("DatabaseManagementModule: No base provider available")
+      logger.error("No base provider available")
       return
 
     match env.get("SQL_PROVIDER"):
@@ -41,7 +42,7 @@ class DatabaseManagementModule(BaseModule):
         from .database_execution_providers.mssql_management_provider import MssqlManagementProvider
         self._mgmt_provider = MssqlManagementProvider(base)
       case _:
-        logging.error("DatabaseManagementModule: Unknown provider")
+        logger.error("Unknown provider")
         return
 
     self.mark_ready()
@@ -60,17 +61,17 @@ class DatabaseManagementModule(BaseModule):
     self._mgmt_provider = None
 
   async def _monitor_loop(self):
-    logging.info("DatabaseManagementModule: Monitor loop started (rate=%.2fs)", self._poll_rate)
+    logger.info("Monitor loop started (rate=%.2fs)", self._poll_rate)
     while not self._loop_stop.is_set():
       try:
         await self._process_pending_tasks()
       except Exception as e:
-        logging.error("DatabaseManagementModule: Loop iteration error: %s", e)
+        logger.error("Loop iteration error: %s", e)
       try:
         await asyncio.wait_for(self._loop_stop.wait(), timeout=self._poll_rate)
       except asyncio.TimeoutError:
         pass
-    logging.info("DatabaseManagementModule: Monitor loop stopped")
+    logger.info("Monitor loop stopped")
 
   async def _process_pending_tasks(self):
     pass

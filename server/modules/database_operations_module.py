@@ -9,6 +9,8 @@ from .database_execution_module import DatabaseExecutionModule
 from .environment_variables_module import EnvironmentVariablesModule
 from server.helpers import deterministic_guid
 
+logger = logging.getLogger(__name__.split('.')[-1])
+
 @dataclass
 class DBRequest:
   op: str
@@ -102,7 +104,7 @@ class DatabaseOperationsModule(BaseModule):
 
     ns = env.get("NS_HASH")
     if ns is None:
-        logging.error("DatabaseOperationsModule: NS_HASH not set")
+        logger.error("NS_HASH not set")
         return
     self._ns_hash = uuid.UUID(ns)
 
@@ -114,7 +116,7 @@ class DatabaseOperationsModule(BaseModule):
       case "MYSQL_CONNECTION_STRING":
         self._query_column = "pub_query_mysql"
       case _:
-        logging.error("DatabaseOperationsModule: Unknown provider")
+        logger.error("Unknown provider")
         return
 
     bootstrap_sql = f"""
@@ -125,7 +127,7 @@ class DatabaseOperationsModule(BaseModule):
     """
     raw = await self._db.query(bootstrap_sql)
     if raw is None:
-      logging.info("DatabaseOperationsModule: No operations found (empty or unseeded)")
+      logger.info("No operations found (empty or unseeded)")
       self.mark_ready()
       return
 
@@ -134,7 +136,7 @@ class DatabaseOperationsModule(BaseModule):
       guid = self._op_guid(entry["pub_op"])
       self._registry[guid] = {"query": entry["query"]}
 
-    logging.info("DatabaseOperationsModule: Loaded %d operations", len(self._registry))
+    logger.info("Loaded %d operations", len(self._registry))
     self.mark_ready()
 
 
@@ -155,7 +157,7 @@ class DatabaseOperationsModule(BaseModule):
     """
     raw = await self._db.query(sql, (guid,))
     if raw is None:
-      logging.error("DatabaseOperationsModule: Unable to load query by key '%s'", guid)
+      logger.error("Unable to load query by key '%s'", guid)
       return None
     self._registry[guid] = {"query": raw["query"]}
     return self._registry[guid]
@@ -164,7 +166,7 @@ class DatabaseOperationsModule(BaseModule):
     guid = self._op_guid(op)
     removed = self._registry.pop(guid, None)
     if removed:
-      logging.info("DatabaseOperationsModule: Flushed op '%s'", op)
+      logger.info("Flushed op '%s'", op)
 
   async def query(self, request: DBRequest) -> Any:
     guid = self._op_guid(request.op)
@@ -172,7 +174,7 @@ class DatabaseOperationsModule(BaseModule):
     if entry is None:
       entry = await self._load_op(guid)
       if entry is None:
-        logging.error("DatabaseOperationsModule: Unknown op '%s'", request.op)
+        logger.error("Unknown op '%s'", request.op)
         return None
     params = tuple(request.params.values()) if request.params else ()
     return await self._db.query(entry["query"], params)
@@ -183,12 +185,12 @@ class DatabaseOperationsModule(BaseModule):
     if entry is None:
       entry = await self._load_op(guid)
       if entry is None:
-        logging.error("DatabaseOperationsModule: Unknown op '%s'", request.op)
+        logger.error("Unknown op '%s'", request.op)
         return None
     params = tuple(request.params.values()) if request.params else ()
     return await self._db.execute(entry["query"], params)
 
   def flush(self):
     self._registry.clear()
-    logging.info("DatabaseOperationsModule: Registry cache flushed")
+    logger.info("Registry cache flushed")
       

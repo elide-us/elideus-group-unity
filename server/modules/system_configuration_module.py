@@ -8,17 +8,19 @@ from .database_execution_module import DatabaseExecutionModule
 from .environment_variables_module import EnvironmentVariablesModule
 from server.helpers import deterministic_guid
 
+logger = logging.getLogger(__name__.split('.')[-1])
+
 # ----------------------------------------------------------------------------
-# SystemConfigurationModule
+# [ServiceConfigurationModule]
 # ----------------------------------------------------------------------------
-# Key/value configuration lookup backed by `system_configuration`.
+# Key/value configuration lookup backed by `service_configuration`.
 #
 # Bootstrap-phase registry module. Loads ALL config rows at startup into
 # an in-memory cache. All access is synchronous against the cache — config
 # values are critical path and must be available without async overhead.
 #
 # Config keys are deterministic:
-#   uuid5(NS_HASH, "system_configuration:{pub_key}")
+#   uuid5(NS_HASH, "service_configuration:{pub_key}")
 #
 # -- Contract ----------------------------------------------------------------
 #   get(key: str) -> str | None                          [sync, cache-only]
@@ -41,7 +43,7 @@ from server.helpers import deterministic_guid
 #   ```mermaid
 #   sequenceDiagram
 #     participant Caller
-#     participant Cfg as SystemConfigurationModule
+#     participant Cfg as [ServiceConfigurationModule]
 #     participant Cache as config cache
 #
 #     Caller->>Cfg: get("StorageCacheTime")
@@ -72,7 +74,7 @@ class SystemConfigurationModule(BaseModule):
 
     ns = env.get("NS_HASH")
     if ns is None:
-      logging.error("SystemConfigurationModule: NS_HASH not set")
+      logger.error("NS_HASH not set")
       return
     self._ns_hash = uuid.UUID(ns)
 
@@ -83,7 +85,7 @@ class SystemConfigurationModule(BaseModule):
     """
     raw = await db.query(bootstrap_sql)
     if raw is None:
-      logging.warning("SystemConfigurationModule: No config rows (empty table)")
+      logger.warning("No config rows (empty table)")
       self.mark_ready()
       return
 
@@ -94,7 +96,7 @@ class SystemConfigurationModule(BaseModule):
         "value": entry.get("pub_value")
       }
 
-    logging.info("SystemConfigurationModule: Loaded %d config entries", len(self._cache))
+    logger.info("Loaded %d config entries", len(self._cache))
     self.mark_ready()
 
   async def on_seal(self):
@@ -114,7 +116,7 @@ class SystemConfigurationModule(BaseModule):
     entry = self._cache.get(guid)
     if entry is not None:
       return entry["value"]
-    logging.warning("SystemConfigurationModule: Key '%s' not in cache", key)
+    logger.warning("Key '%s' not in cache", key)
     return None
 
   def get_all(self) -> dict[str, str]:
@@ -122,4 +124,4 @@ class SystemConfigurationModule(BaseModule):
 
   def flush(self):
     self._cache.clear()
-    logging.info("SystemConfigurationModule: Cache flushed")
+    logger.info("Cache flushed")

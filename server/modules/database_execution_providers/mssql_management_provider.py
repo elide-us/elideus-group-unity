@@ -4,6 +4,7 @@ from typing import Any
 
 from . import DatabaseTransactionProvider, DatabaseManagementProvider
 
+logger = logging.getLogger(__name__.split('.')[-1])
 
 class MssqlManagementProvider(DatabaseManagementProvider):
   def __init__(self, provider: DatabaseTransactionProvider):
