@@ -20,13 +20,13 @@ class DatabaseManagementModule(BaseModule):
 
   async def startup(self):
     env = self.get_module(EnvironmentVariablesModule)
-    await env.on_ready()
+    await env.on_sealed()
 
     exec_mod = self.get_module(DatabaseExecutionModule)
-    await exec_mod.on_ready()
+    await exec_mod.on_sealed()
 
     cfg = self.get_module(SystemConfigurationModule)
-    await cfg.on_ready()
+    await cfg.on_sealed()
 
     rate_str = cfg.get("TaskDdlPollRate")
     if rate_str is not None:
@@ -45,7 +45,7 @@ class DatabaseManagementModule(BaseModule):
         logger.error("Unknown provider")
         return
 
-    self.mark_ready()
+    self.raise_seal()
 
   async def on_seal(self):
     await super().on_seal()

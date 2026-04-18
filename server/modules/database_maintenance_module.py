@@ -15,8 +15,8 @@ class DatabaseMaintenanceModule(BaseModule):
 
   async def startup(self):
     self._ops = self.get_module(DatabaseOperationsModule)
-    await self._ops.on_ready()
-    self.mark_ready()
+    await self._ops.on_sealed()
+    self.raise_seal()
 
   async def on_seal(self):
     await super().on_seal()

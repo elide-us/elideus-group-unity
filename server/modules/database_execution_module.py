@@ -71,7 +71,7 @@ class DatabaseExecutionModule(BaseModule):
   
   async def startup(self):
     env = self.get_module(EnvironmentVariablesModule)
-    await env.on_ready()
+    await env.on_sealed()
 
     provider_name = env.get("SQL_PROVIDER")
     if provider_name is None:
@@ -111,7 +111,7 @@ class DatabaseExecutionModule(BaseModule):
       return
 
     await self._provider.connect()
-    self.mark_ready()
+    self.raise_seal()
 
   async def shutdown(self):
     if self._provider:

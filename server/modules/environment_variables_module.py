@@ -21,7 +21,7 @@ class EnvironmentVariablesModule(BaseModule):
   
   async def startup(self):
     self._load_all()
-    self.mark_ready()
+    self.raise_seal()
 
   async def shutdown(self):
     self._env.clear()

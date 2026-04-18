@@ -98,7 +98,7 @@ class DatabaseOperationsModule(BaseModule):
   
   async def startup(self):
     self._db = self.get_module(DatabaseExecutionModule)
-    await self._db.on_ready()
+    await self._db.on_sealed()
 
     env = self.get_module(EnvironmentVariablesModule)
 
@@ -128,7 +128,7 @@ class DatabaseOperationsModule(BaseModule):
     raw = await self._db.query(bootstrap_sql)
     if raw is None:
       logger.info("No operations found (empty or unseeded)")
-      self.mark_ready()
+      self.raise_seal()
       return
 
     ops = raw if isinstance(raw, list) else [raw]
@@ -137,7 +137,7 @@ class DatabaseOperationsModule(BaseModule):
       self._registry[guid] = {"query": entry["query"]}
 
     logger.info("Loaded %d operations", len(self._registry))
-    self.mark_ready()
+    self.raise_seal()
 
 
 

@@ -50,20 +50,20 @@ T = TypeVar("T", bound="BaseModule")
 #   get_module(T)   Returns the registered instance of module type T.
 #                   Call during startup() to get references to other modules.
 #
-#   on_ready()      Awaits until the target module has called mark_ready().
+#   on_sealed()     Awaits until the target module has called mark_ready().
 #                   Use after get_module() to ensure the dependency is
 #                   initialized before using it.
 #
-#   mark_ready()    Signals that this module is initialized and safe for
+#   raise_seal()    Signals that this module is initialized and safe for
 #                   dependents to call into. Call at the end of startup()
 #                   after all resources are live.
 #
 # -- Dependency graph --------------------------------------------------------
 # All modules start concurrently. Ordering is implicit: a module that
-# calls `await dep.on_ready()` in its startup() will park until the
+# calls `await dep.on_sealed()` in its startup() will park until the
 # dependency signals. This forms a dynamic DAG at runtime. The only
 # constraint is no circular dependencies — two modules that each await
-# the other's on_ready() will deadlock.
+# the other's on_sealed() will deadlock.
 #
 # Modules get their own references. The ModuleManager does not
 # orchestrate composition, pass references, or know which module
@@ -73,7 +73,7 @@ T = TypeVar("T", bound="BaseModule")
 # After all on_seal() calls complete, ModuleManager._sealed = True.
 # Modules that need to restrict post-bootstrap behavior (e.g.,
 # DatabaseManagementModule refusing DDL) check this flag on their
-# public methods. The flag is in-memory only — restart always unseals.
+# public methods. The flag is in-memory only - restart always unseals.
 #
 # ----------------------------------------------------------------------------
 
@@ -105,7 +105,7 @@ class BaseModule(ABC):
     try:
       await self._hook_install_seed_package()
     except Exception as e:
-      logger.error("%s: _hook_install_seed_pacakge failed: %s", self.__class__.__name__, e)
+      logger.error("%s: _hook_install_seed_package failed: %s", self.__class__.__name__, e)
       return
     logger.info("%s: Sealed", self.__class__.__name__)
 
@@ -117,10 +117,10 @@ class BaseModule(ABC):
   async def shutdown(self):
     pass
 
-  def mark_ready(self):
+  def raise_seal(self):
     self._ready_event.set()
 
-  async def on_ready(self):
+  async def on_sealed(self):
     await self._ready_event.wait()
 
   @property

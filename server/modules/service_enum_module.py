@@ -79,10 +79,10 @@ class ServiceEnumModule(BaseModule):
 
   async def startup(self):
     env = self.get_module(EnvironmentVariablesModule)
-    await env.on_ready()
+    await env.on_sealed()
 
     self._db = self.get_module(DatabaseExecutionModule)
-    await self._db.on_ready()
+    await self._db.on_sealed()
 
     ns = env.get("NS_HASH")
     if ns is None:
@@ -98,7 +98,7 @@ class ServiceEnumModule(BaseModule):
     raw = await self._db.query(bootstrap_sql)
     if raw is None:
       logger.warning("No enum rows found (empty table)")
-      self.mark_ready()
+      self.raise_seal()
       return
 
     rows = raw if isinstance(raw, list) else [raw]
@@ -110,7 +110,7 @@ class ServiceEnumModule(BaseModule):
       }
 
     logger.info("Loaded %d enum entries", len(self._cache))
-    self.mark_ready()
+    self.raise_seal()
 
   async def on_seal(self):
     pass

@@ -67,10 +67,10 @@ class SystemConfigurationModule(BaseModule):
 
   async def startup(self):
     env = self.get_module(EnvironmentVariablesModule)
-    await env.on_ready()
+    await env.on_sealed()
 
     db = self.get_module(DatabaseExecutionModule)
-    await db.on_ready()
+    await db.on_sealed()
 
     ns = env.get("NS_HASH")
     if ns is None:
@@ -86,7 +86,7 @@ class SystemConfigurationModule(BaseModule):
     raw = await db.query(bootstrap_sql)
     if raw is None:
       logger.warning("No config rows (empty table)")
-      self.mark_ready()
+      self.raise_seal()
       return
 
     rows = raw if isinstance(raw, list) else [raw]
@@ -97,7 +97,7 @@ class SystemConfigurationModule(BaseModule):
       }
 
     logger.info("Loaded %d config entries", len(self._cache))
-    self.mark_ready()
+    self.raise_seal()
 
   async def on_seal(self):
     pass
