@@ -5,6 +5,7 @@ import asyncio, logging, os, importlib
 
 from server.helpers import snake_to_pascal
 
+logger = logging.getLogger(__name__.split('.')[-1])
 
 MODULES_FOLDER = os.path.dirname(__file__)
 
@@ -23,18 +24,19 @@ T = TypeVar("T", bound="BaseModule")
 #                   No async work. No dependency resolution. Called during
 #                   ModuleManager._on_startup_init() (Phase 1).
 #
-#   startup()       Async. Resolve dependencies via get_module() + on_ready().
-#                   Load data, open resources, mark_ready(). Called during
+#   startup()       Async. Resolve dependencies via get_module() + on_sealed().
+#                   Load data, open resources, raise_seal(). Called during
 #                   ModuleManager._on_startup_all() (Phase 2). All modules
 #                   run concurrently via asyncio.gather; ordering emerges
-#                   from on_ready() waits, not dispatch order.
+#                   from on_sealed() waits, not dispatch order.
 #
 #   on_seal()       Async. Post-init work. All modules are live and ready.
 #                   Called during ModuleManager._on_startup_complete()
 #                   (Phase 3). Runs concurrently across all modules. After
-#                   all on_seal() calls complete, _sealed = True. Use this
-#                   for reconciliation, finalization, or any work that
-#                   requires the full module graph to be initialized.
+#                   all on_seal() calls complete, the manager's _sealed_event
+#                   is raised. Use this for reconciliation, finalization,
+#                   or any work that requires the full module graph to be
+#                   initialized.
 #
 #   on_drain()      Async. Pre-shutdown signal. Stop accepting new work,
 #                   flush in-flight operations, release external holds.
@@ -49,30 +51,32 @@ T = TypeVar("T", bound="BaseModule")
 #   get_module(T)   Returns the registered instance of module type T.
 #                   Call during startup() to get references to other modules.
 #
-#   on_ready()      Awaits until the target module has called mark_ready().
+#   on_sealed()     Awaits until the target module has called raise_seal().
 #                   Use after get_module() to ensure the dependency is
 #                   initialized before using it.
 #
-#   mark_ready()    Signals that this module is initialized and safe for
+#   raise_seal()    Signals that this module is initialized and safe for
 #                   dependents to call into. Call at the end of startup()
 #                   after all resources are live.
 #
 # -- Dependency graph --------------------------------------------------------
 # All modules start concurrently. Ordering is implicit: a module that
-# calls `await dep.on_ready()` in its startup() will park until the
+# calls `await dep.on_sealed()` in its startup() will park until the
 # dependency signals. This forms a dynamic DAG at runtime. The only
 # constraint is no circular dependencies — two modules that each await
-# the other's on_ready() will deadlock.
+# the other's on_sealed() will deadlock.
 #
 # Modules get their own references. The ModuleManager does not
 # orchestrate composition, pass references, or know which module
 # depends on which. It only calls the contract methods.
 #
 # -- Sealed state ------------------------------------------------------------
-# After all on_seal() calls complete, ModuleManager._sealed = True.
-# Modules that need to restrict post-bootstrap behavior (e.g.,
-# DatabaseManagementModule refusing DDL) check this flag on their
-# public methods. The flag is in-memory only — restart always unseals.
+# After all on_seal() calls complete, ModuleManager raises its
+# _sealed_event. Modules check manager state via `manager.is_sealed`
+# (sync read) or `await manager.on_sealed()` (async wait). Both are
+# backed by the single event. The event is in-memory only — a full
+# shutdown/startup cycle clears and re-raises it through the normal
+# phase boundaries.
 #
 # ----------------------------------------------------------------------------
 
@@ -104,9 +108,9 @@ class BaseModule(ABC):
     try:
       await self._hook_install_seed_package()
     except Exception as e:
-      logging.error("%s: _hook_install_seed_pacakge failed: %s", self.__class__.__name__, e)
+      logger.error("%s: _hook_install_seed_package failed: %s", self.__class__.__name__, e)
       return
-    logging.info("%s: Sealed", self.__class__.__name__)
+    logger.info("%s: Sealed", self.__class__.__name__)
 
   @abstractmethod
   async def on_drain(self):
@@ -116,10 +120,10 @@ class BaseModule(ABC):
   async def shutdown(self):
     pass
 
-  def mark_ready(self):
+  def raise_seal(self):
     self._ready_event.set()
 
-  async def on_ready(self):
+  async def on_sealed(self):
     await self._ready_event.wait()
 
   @property
@@ -147,12 +151,12 @@ class BaseModule(ABC):
 #
 #     Phase 2: _on_startup_all()       Async. Concurrent startup() on all
 #              modules via asyncio.gather. Modules resolve dependencies,
-#              load data, open pools, mark_ready(). Ordering emerges
-#              from on_ready() waits in the dependency graph.
+#              load data, open pools, raise_seal(). Ordering emerges
+#              from on_sealed() waits in the dependency graph.
 #
 #     Phase 3: _on_startup_complete()  Async. Concurrent on_seal() on all
 #              modules. Post-init work (reconciliation, finalization).
-#              After all on_seal() calls complete: _sealed = True.
+#              After all on_seal() calls complete: _sealed_event.set().
 #
 #   shutdown():
 #     Phase 1: _on_shutdown_init()     Async. Concurrent on_drain() on all
@@ -162,7 +166,7 @@ class BaseModule(ABC):
 #              modules. Clear caches, close pools, null references.
 #              Clears the instance registry.
 #
-#     Phase 3: _on_shutdown_complete() Sync. _sealed = False. Manager
+#     Phase 3: _on_shutdown_complete() Sync. _sealed_event.clear(). Manager
 #              cleanup after all modules are down.
 #
 # -- Design principles -------------------------------------------------------
@@ -174,7 +178,7 @@ class BaseModule(ABC):
 #   - Enforce ordering beyond the phase boundaries
 #
 # Modules are self-sufficient. They use get_module() to find each other
-# and on_ready() to sequence themselves. Composition of extended
+# and on_sealed() to sequence themselves. Composition of extended
 # providers (e.g., management provider onto execution provider) is
 # internal to the module that needs it.
 #
@@ -184,14 +188,15 @@ class BaseModule(ABC):
 # the module, expects a class with the converted name, instantiates it.
 #
 # -- Sealed state ------------------------------------------------------------
-# _sealed is an in-memory bool, False by default. Set True at the end
-# of _on_startup_complete(). Set False at the end of _on_shutdown_complete().
-# Modules check this flag to restrict post-bootstrap operations.
-# Not persisted — restart always starts unsealed so reconciliation runs.
+# _sealed_event is an asyncio.Event, unset by default. Set at the end
+# of _on_startup_complete(). Cleared at the end of
+# _on_shutdown_complete(). Modules check via the public `is_sealed`
+# property (sync) or wait via `on_sealed()` (async). Not persisted —
+# full shutdown/startup clears and re-raises it.
 #
 # -- Circular dependency guard -----------------------------------------------
 # No runtime detection. Two modules that each await the other's
-# on_ready() will deadlock silently. This is a code error. The
+# on_sealed() will deadlock silently. This is a code error. The
 # dependency graph must be a DAG.
 #
 # ----------------------------------------------------------------------------
@@ -200,7 +205,14 @@ class ModuleManager:
   def __init__(self, app: FastAPI):
     self.app = app
     self._instances: Dict[type, BaseModule] = {}
-    self._sealed: bool = False
+    self._sealed_event: asyncio.Event = asyncio.Event()
+
+  @property
+  def is_sealed(self) -> bool:
+    return self._sealed_event.is_set()
+
+  async def on_sealed(self):
+    await self._sealed_event.wait()
 
   async def startup(self):
     self.app.state.module_manager = self
@@ -217,7 +229,7 @@ class ModuleManager:
   async def restart(self):
     for module_class in self._instances.keys():
       await self._restart(module_class)
-    logging.info("[ModuleManager] restart complete")
+    logger.info("Restart complete")
 
   async def _restart(self, module_type: Type[T]) -> T:
     instance = self._get_module(module_type)
@@ -230,7 +242,7 @@ class ModuleManager:
   def _get_module(self, module_type: Type[T]) -> T:
     instance = self._instances.get(module_type)
     if instance is None:
-      logging.error("Module '%s' not registered", module_type.__name__)
+      logger.error("'%s' not registered", module_type.__name__)
       return None
     return instance
 
@@ -246,7 +258,7 @@ class ModuleManager:
       module = importlib.import_module(module_path)
 
       if not hasattr(module, class_name):
-        logging.error("Module '%s' missing expected class '%s'", file_stem, class_name)
+        logger.error("Module '%s' missing expected class '%s'", file_stem, class_name)
         continue
 
       module_class = getattr(module, class_name)
@@ -258,17 +270,17 @@ class ModuleManager:
 
   def _on_startup_init(self):
     self._discover_and_register()
-    logging.info("[ModuleManager] on_startup_init — %d modules registered", len(self._instances))
+    logger.info("on_startup_init - %d modules registered", len(self._instances))
 
   async def _on_startup_all(self):
     async def _start_module(module_class: type, module: BaseModule):
       await module.startup()
-      logging.info("[ModuleManager] %s started", module_class.__name__)
+      logger.info("'%s' started", module_class.__name__)
 
     await asyncio.gather(*(
       _start_module(module_class, module) for module_class, module in self._instances.items()
     ))
-    logging.info("[ModuleManager] on_startup_all successful")
+    logger.info("on_startup_all successful")
 
   async def _on_startup_complete(self):
     async def _on_seal_module(module: BaseModule):
@@ -278,8 +290,8 @@ class ModuleManager:
       _on_seal_module(module) for module in self._instances.values()
     ))
 
-    self._sealed = True
-    logging.info("[ModuleManager] on_startup_complete — sealed")
+    self._sealed_event.set()
+    logger.info("on_startup_complete - sealed")
 
   # -- Shutdown --------------------------------------------------------------
 
@@ -290,20 +302,19 @@ class ModuleManager:
     await asyncio.gather(*(
       _on_drain_module(module) for module in self._instances.values()
     ))
-    logging.info("[ModuleManager] on_shutdown_init — %d modules drained", len(self._instances))
+    logger.info("on_shutdown_init - %d modules drained", len(self._instances))
 
   async def _on_shutdown_all(self):
     async def _stop_module(module_class: type, module: BaseModule):
       await module.shutdown()
-      logging.info("[ModuleManager] %s stopped", module_class.__name__)
+      logger.info("'%s' stopped", module_class.__name__)
 
     await asyncio.gather(*(
       _stop_module(module_class, module) for module_class, module in self._instances.items()
     ))
     self._instances.clear()
-    logging.info("[ModuleManager] on_shutdown_all successful")
+    logger.info("on_shutdown_all successful")
 
   def _on_shutdown_complete(self):
-    self._sealed = False
-    logging.info("[ModuleManager] on_shutdown_complete — unsealed")
-    
+    self._sealed_event.clear()
+    logger.info("on_shutdown_complete - unsealed")

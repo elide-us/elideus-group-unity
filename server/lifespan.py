@@ -3,7 +3,9 @@ import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from server.modules import ModuleManager
+from server.kernel import ModuleManager
+
+logger = logging.getLogger(__name__.split('.')[-1])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
