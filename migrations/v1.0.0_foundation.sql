@@ -6,14 +6,14 @@
 -- Install order matches dependency order. No forward references.
 --
 -- Tables:
---   1. system_objects_types                       (EDT — platform type system)
---   2. system_objects_enums                       (enum values, magic number avoidance)
---   3. system_objects_database_tables             (table definitions)
---   4. system_objects_database_columns            (column definitions)
---   5. system_objects_database_indexes            (index definitions)
---   6. system_objects_database_index_columns      (index ↔ column junction)
---   7. system_objects_database_constraints        (constraint definitions)
---   8. system_objects_database_constraint_columns (constraint ↔ column junction)
+--   1. service_types                       (EDT — platform type system)
+--   2. service_enums                       (enum values, magic number avoidance)
+--   3. objects_schema_tables             (table definitions)
+--   4. objects_schema_columns            (column definitions)
+--   5. objects_schema_indexes            (index definitions)
+--   6. objects_schema_index_columns      (index ↔ column junction)
+--   7. objects_schema_constraints        (constraint definitions)
+--   8. objects_schema_constraint_columns (constraint ↔ column junction)
 --
 -- Column prefix conventions:
 --   key_*  — Primary key
@@ -34,7 +34,7 @@ SET QUOTED_IDENTIFIER ON;
 GO
 
 -- =============================================================================
--- 1. system_objects_types
+-- 1. service_types
 -- =============================================================================
 -- The platform type system. Every column in every table references a type
 -- row that defines its representation across all supported database engines,
@@ -47,11 +47,11 @@ GO
 -- when present. STRING type requires a column-level override (type has no
 -- default length).
 --
--- Deterministic key: uuid5(NS_HASH, "type:{pub_name}")
+-- Deterministic key: uuid5(NS_HASH, "service_types:{pub_name}")
 
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_types] (
+CREATE TABLE [dbo].[service_types] (
   [key_guid]              UNIQUEIDENTIFIER  NOT NULL,
   [pub_name]              NVARCHAR(64)      NOT NULL,
   [pub_mssql_type]        NVARCHAR(128)     NOT NULL,
@@ -65,22 +65,22 @@ CREATE TABLE [dbo].[system_objects_types] (
   [pub_notes]             NVARCHAR(512)     NULL,
   [priv_created_on]       DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]      DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_types] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [UQ_sot_name] UNIQUE ([pub_name])
+  CONSTRAINT [PK_service_types] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [UQ_st_name] UNIQUE ([pub_name])
 );
 GO
 
 -- =============================================================================
--- 2. system_objects_enums
+-- 2. service_enums
 -- =============================================================================
 -- Enumeration values for avoiding magic numbers throughout the platform.
 -- Grouped by pub_enum_type, each value is a tinyint (0-255).
 -- Modules lazy-load enumerations by type at runtime.
 --
--- Deterministic key: uuid5(NS_HASH, "enum:{pub_enum_type}:{pub_name}")
+-- Deterministic key: uuid5(NS_HASH, "service_enums:{pub_enum_type}.{pub_name}")
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_enums] (
+CREATE TABLE [dbo].[service_enums] (
   [key_guid]              UNIQUEIDENTIFIER  NOT NULL,
   [pub_enum_type]         NVARCHAR(128)     NOT NULL,
   [pub_name]              NVARCHAR(128)     NOT NULL,
@@ -88,51 +88,54 @@ CREATE TABLE [dbo].[system_objects_enums] (
   [pub_notes]             NVARCHAR(512)     NULL,
   [priv_created_on]       DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]      DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_enums] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [UQ_soe_type_value] UNIQUE ([pub_enum_type], [pub_value]),
-  CONSTRAINT [UQ_soe_type_name] UNIQUE ([pub_enum_type], [pub_name])
+  CONSTRAINT [PK_service_enums] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [UQ_se_type_value] UNIQUE ([pub_enum_type], [pub_value]),
+  CONSTRAINT [UQ_se_type_name] UNIQUE ([pub_enum_type], [pub_name])
 );
 GO
 
 -- =============================================================================
--- 3. system_objects_database_tables
+-- 3. objects_schema_tables
 -- =============================================================================
 -- One row per table in the application schema.
 --
--- Deterministic key: uuid5(NS_HASH, "database_table:{pub_schema}.{pub_name}")
+-- Deterministic key: uuid5(NS_HASH, "objects_schema_tables:{pub_schema}.{pub_name}")
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_database_tables] (
+CREATE TABLE [dbo].[objects_schema_tables] (
   [key_guid]              UNIQUEIDENTIFIER  NOT NULL,
   [pub_name]              NVARCHAR(128)     NOT NULL,
   [pub_schema]            NVARCHAR(64)      NOT NULL DEFAULT ('dbo'),
+  [pub_alias]             NVARCHAR(16)      NOT NULL,
   [priv_created_on]       DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]      DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_database_tables] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [UQ_sodt_schema_name] UNIQUE ([pub_schema], [pub_name])
+  CONSTRAINT [PK_objects_schema_tables] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [UQ_ost_schema_name] UNIQUE ([pub_schema], [pub_name]),
+  CONSTRAINT [UQ_ost_alias] UNIQUE ([pub_alias])
 );
 GO
 
 -- =============================================================================
--- 4. system_objects_database_columns
+-- 4. objects_schema_columns
 -- =============================================================================
 -- One row per column. References the owning table and the type row that
 -- defines its representation.
 --
 -- pub_default_value holds the default value expression for the column (e.g.,
--- 'SYSDATETIMEOFFSET()', 'NEWID()', '0'). This is a column attribute,
--- not a constraint — the management module emits DEFAULT constraints from
--- this value during DDL generation.
+-- 'SYSDATETIMEOFFSET()', 'Default String', '1.00'). This is a 
+-- column attribute, not a constraint - the management module emits DEFAULT 
+-- constraints from this value during DDL generation.
 --
--- pub_is_nullable is the only behavioral flag on the column. Identity is
--- expressed through the type reference (INT64_IDENTITY). Primary key
+-- pub_is_nullable is the only behavioral flag on the column. Primary key
 -- membership is expressed as a constraint row, not a column flag.
 --
 -- pub_max_length overrides the type's pub_default_length when present.
+--
+-- Deterministic key: uuid5(NS_HASH, "objects_schema_columns:{schema}.{table}.{column}")
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_database_columns] (
-  [key_guid]              UNIQUEIDENTIFIER  NOT NULL DEFAULT (NEWID()),
+CREATE TABLE [dbo].[objects_schema_columns] (
+  [key_guid]              UNIQUEIDENTIFIER  NOT NULL,
   [ref_table_guid]        UNIQUEIDENTIFIER  NOT NULL,
   [ref_type_guid]         UNIQUEIDENTIFIER  NOT NULL,
   [pub_name]              NVARCHAR(128)     NOT NULL,
@@ -142,51 +145,51 @@ CREATE TABLE [dbo].[system_objects_database_columns] (
   [pub_max_length]        INT               NULL,
   [priv_created_on]       DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]      DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_database_columns] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [FK_sodc_table] FOREIGN KEY ([ref_table_guid])
-    REFERENCES [dbo].[system_objects_database_tables] ([key_guid]),
-  CONSTRAINT [FK_sodc_type] FOREIGN KEY ([ref_type_guid])
-    REFERENCES [dbo].[system_objects_types] ([key_guid]),
-  CONSTRAINT [UQ_sodc_table_name] UNIQUE ([ref_table_guid], [pub_name]),
-  CONSTRAINT [UQ_sodc_table_ordinal] UNIQUE ([ref_table_guid], [pub_ordinal])
+  CONSTRAINT [PK_objects_schema_columns] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [FK_osc_table] FOREIGN KEY ([ref_table_guid])
+    REFERENCES [dbo].[objects_schema_tables] ([key_guid]),
+  CONSTRAINT [FK_osc_type] FOREIGN KEY ([ref_type_guid])
+    REFERENCES [dbo].[service_types] ([key_guid]),
+  CONSTRAINT [UQ_osc_table_name] UNIQUE ([ref_table_guid], [pub_name]),
+  CONSTRAINT [UQ_osc_table_ordinal] UNIQUE ([ref_table_guid], [pub_ordinal])
 );
 GO
 
-CREATE INDEX [IX_sodc_table_guid]
-  ON [dbo].[system_objects_database_columns] ([ref_table_guid]);
+CREATE INDEX [IX_osc_table_guid]
+  ON [dbo].[objects_schema_columns] ([ref_table_guid]);
 GO
 
-CREATE INDEX [IX_sodc_type_guid]
-  ON [dbo].[system_objects_database_columns] ([ref_type_guid]);
+CREATE INDEX [IX_osc_type_guid]
+  ON [dbo].[objects_schema_columns] ([ref_type_guid]);
 GO
 
 -- =============================================================================
--- 5. system_objects_database_indexes
+-- 5. objects_schema_indexes
 -- =============================================================================
 -- One row per index. Column membership and predicate ordering live in the
--- junction table system_objects_database_index_columns.
+-- junction table objects_schema_index_columns.
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_database_indexes] (
-  [key_guid]              UNIQUEIDENTIFIER  NOT NULL DEFAULT (NEWID()),
+CREATE TABLE [dbo].[objects_schema_indexes] (
+  [key_guid]              UNIQUEIDENTIFIER  NOT NULL,
   [ref_table_guid]        UNIQUEIDENTIFIER  NOT NULL,
   [pub_name]              NVARCHAR(256)     NOT NULL,
   [pub_is_unique]         BIT               NOT NULL DEFAULT (0),
   [priv_created_on]       DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]      DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_database_indexes] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [FK_sodi_table] FOREIGN KEY ([ref_table_guid])
-    REFERENCES [dbo].[system_objects_database_tables] ([key_guid]),
-  CONSTRAINT [UQ_sodi_table_name] UNIQUE ([ref_table_guid], [pub_name])
+  CONSTRAINT [PK_objects_schema_indexes] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [FK_osi_table] FOREIGN KEY ([ref_table_guid])
+    REFERENCES [dbo].[objects_schema_tables] ([key_guid]),
+  CONSTRAINT [UQ_osi_table_name] UNIQUE ([ref_table_guid], [pub_name])
 );
 GO
 
-CREATE INDEX [IX_sodi_table_guid]
-  ON [dbo].[system_objects_database_indexes] ([ref_table_guid]);
+CREATE INDEX [IX_osi_table_guid]
+  ON [dbo].[objects_schema_indexes] ([ref_table_guid]);
 GO
 
 -- =============================================================================
--- 6. system_objects_database_index_columns
+-- 6. objects_schema_index_columns
 -- =============================================================================
 -- Junction table linking indexes to their constituent columns with ordering.
 -- pub_ordinal controls predicate ordering in CREATE INDEX.
@@ -197,31 +200,31 @@ GO
 -- packages are implemented.
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_database_index_columns] (
-  [key_guid]              UNIQUEIDENTIFIER  NOT NULL DEFAULT (NEWID()),
+CREATE TABLE [dbo].[objects_schema_index_columns] (
+  [key_guid]              UNIQUEIDENTIFIER  NOT NULL,
   [ref_index_guid]        UNIQUEIDENTIFIER  NOT NULL,
   [ref_column_guid]       UNIQUEIDENTIFIER  NOT NULL,
   [pub_ordinal]           INT               NOT NULL,
   [priv_created_on]       DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]      DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_database_index_columns] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [FK_sodic_index] FOREIGN KEY ([ref_index_guid])
-    REFERENCES [dbo].[system_objects_database_indexes] ([key_guid]),
-  CONSTRAINT [FK_sodic_column] FOREIGN KEY ([ref_column_guid])
-    REFERENCES [dbo].[system_objects_database_columns] ([key_guid]),
-  CONSTRAINT [UQ_sodic_index_ordinal] UNIQUE ([ref_index_guid], [pub_ordinal]),
-  CONSTRAINT [UQ_sodic_index_column] UNIQUE ([ref_index_guid], [ref_column_guid])
+  CONSTRAINT [PK_objects_schema_index_columns] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [FK_osic_index] FOREIGN KEY ([ref_index_guid])
+    REFERENCES [dbo].[objects_schema_indexes] ([key_guid]),
+  CONSTRAINT [FK_osic_column] FOREIGN KEY ([ref_column_guid])
+    REFERENCES [dbo].[objects_schema_columns] ([key_guid]),
+  CONSTRAINT [UQ_osic_index_ordinal] UNIQUE ([ref_index_guid], [pub_ordinal]),
+  CONSTRAINT [UQ_osic_index_column] UNIQUE ([ref_index_guid], [ref_column_guid])
 );
 GO
 
-CREATE INDEX [IX_sodic_index_guid]
-  ON [dbo].[system_objects_database_index_columns] ([ref_index_guid]);
+CREATE INDEX [IX_osic_index_guid]
+  ON [dbo].[objects_schema_index_columns] ([ref_index_guid]);
 GO
 
 -- =============================================================================
--- 7. system_objects_database_constraints
+-- 7. objects_schema_constraints
 -- =============================================================================
--- One row per constraint. ref_kind_enum_guid references system_objects_enums
+-- One row per constraint. ref_kind_enum_guid references service_enums
 -- (enum_type = 'constraint_kind'). Supported kinds:
 --
 --   PRIMARY_KEY (0) — one per table, columns via junction
@@ -240,8 +243,8 @@ GO
 -- For CHECK constraints, pub_expression holds the SQL predicate text.
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_database_constraints] (
-  [key_guid]                    UNIQUEIDENTIFIER  NOT NULL DEFAULT (NEWID()),
+CREATE TABLE [dbo].[objects_schema_constraints] (
+  [key_guid]                    UNIQUEIDENTIFIER  NOT NULL,
   [ref_table_guid]              UNIQUEIDENTIFIER  NOT NULL,
   [ref_kind_enum_guid]          UNIQUEIDENTIFIER  NOT NULL,
   [ref_referenced_table_guid]   UNIQUEIDENTIFIER  NULL,
@@ -249,27 +252,27 @@ CREATE TABLE [dbo].[system_objects_database_constraints] (
   [pub_expression]              NVARCHAR(MAX)     NULL,
   [priv_created_on]             DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]            DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_database_constraints] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [FK_sodcon_table] FOREIGN KEY ([ref_table_guid])
-    REFERENCES [dbo].[system_objects_database_tables] ([key_guid]),
-  CONSTRAINT [FK_sodcon_kind] FOREIGN KEY ([ref_kind_enum_guid])
-    REFERENCES [dbo].[system_objects_enums] ([key_guid]),
-  CONSTRAINT [FK_sodcon_ref_table] FOREIGN KEY ([ref_referenced_table_guid])
-    REFERENCES [dbo].[system_objects_database_tables] ([key_guid]),
-  CONSTRAINT [UQ_sodcon_table_name] UNIQUE ([ref_table_guid], [pub_name])
+  CONSTRAINT [PK_objects_schema_constraints] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [FK_osco_table] FOREIGN KEY ([ref_table_guid])
+    REFERENCES [dbo].[objects_schema_tables] ([key_guid]),
+  CONSTRAINT [FK_osco_kind] FOREIGN KEY ([ref_kind_enum_guid])
+    REFERENCES [dbo].[service_enums] ([key_guid]),
+  CONSTRAINT [FK_osco_ref_table] FOREIGN KEY ([ref_referenced_table_guid])
+    REFERENCES [dbo].[objects_schema_tables] ([key_guid]),
+  CONSTRAINT [UQ_osco_table_name] UNIQUE ([ref_table_guid], [pub_name])
 );
 GO
 
-CREATE INDEX [IX_sodcon_table_guid]
-  ON [dbo].[system_objects_database_constraints] ([ref_table_guid]);
+CREATE INDEX [IX_osco_table_guid]
+  ON [dbo].[objects_schema_constraints] ([ref_table_guid]);
 GO
 
-CREATE INDEX [IX_sodcon_kind]
-  ON [dbo].[system_objects_database_constraints] ([ref_kind_enum_guid]);
+CREATE INDEX [IX_osco_kind]
+  ON [dbo].[objects_schema_constraints] ([ref_kind_enum_guid]);
 GO
 
 -- =============================================================================
--- 8. system_objects_database_constraint_columns
+-- 8. objects_schema_constraint_columns
 -- =============================================================================
 -- Junction table linking constraints to their constituent columns.
 --
@@ -287,28 +290,28 @@ GO
 --   tracking during schema changes.
 -- =============================================================================
 
-CREATE TABLE [dbo].[system_objects_database_constraint_columns] (
-  [key_guid]                    UNIQUEIDENTIFIER  NOT NULL DEFAULT (NEWID()),
+CREATE TABLE [dbo].[objects_schema_constraint_columns] (
+  [key_guid]                    UNIQUEIDENTIFIER  NOT NULL,
   [ref_constraint_guid]         UNIQUEIDENTIFIER  NOT NULL,
   [ref_column_guid]             UNIQUEIDENTIFIER  NOT NULL,
   [ref_referenced_column_guid]  UNIQUEIDENTIFIER  NULL,
   [pub_ordinal]                 INT               NOT NULL,
   [priv_created_on]             DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]             DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
-  CONSTRAINT [PK_system_objects_database_constraint_columns] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [FK_sodcc_constraint] FOREIGN KEY ([ref_constraint_guid])
-    REFERENCES [dbo].[system_objects_database_constraints] ([key_guid]),
-  CONSTRAINT [FK_sodcc_column] FOREIGN KEY ([ref_column_guid])
-    REFERENCES [dbo].[system_objects_database_columns] ([key_guid]),
-  CONSTRAINT [FK_sodcc_ref_column] FOREIGN KEY ([ref_referenced_column_guid])
-    REFERENCES [dbo].[system_objects_database_columns] ([key_guid]),
-  CONSTRAINT [UQ_sodcc_constraint_ordinal] UNIQUE ([ref_constraint_guid], [pub_ordinal]),
-  CONSTRAINT [UQ_sodcc_constraint_column] UNIQUE ([ref_constraint_guid], [ref_column_guid])
+  CONSTRAINT [PK_objects_schema_constraint_columns] PRIMARY KEY ([key_guid]),
+  CONSTRAINT [FK_oscc_constraint] FOREIGN KEY ([ref_constraint_guid])
+    REFERENCES [dbo].[objects_schema_constraints] ([key_guid]),
+  CONSTRAINT [FK_oscc_column] FOREIGN KEY ([ref_column_guid])
+    REFERENCES [dbo].[objects_schema_columns] ([key_guid]),
+  CONSTRAINT [FK_oscc_ref_column] FOREIGN KEY ([ref_referenced_column_guid])
+    REFERENCES [dbo].[objects_schema_columns] ([key_guid]),
+  CONSTRAINT [UQ_oscc_constraint_ordinal] UNIQUE ([ref_constraint_guid], [pub_ordinal]),
+  CONSTRAINT [UQ_oscc_constraint_column] UNIQUE ([ref_constraint_guid], [ref_column_guid])
 );
 GO
 
-CREATE INDEX [IX_sodcc_constraint_guid]
-  ON [dbo].[system_objects_database_constraint_columns] ([ref_constraint_guid]);
+CREATE INDEX [IX_oscc_constraint_guid]
+  ON [dbo].[objects_schema_constraint_columns] ([ref_constraint_guid]);
 GO
 
 -- =============================================================================
@@ -352,7 +355,7 @@ GO
 -- state. Boot check: row exists AND pub_is_sealed = 1 AND pub_version
 -- matches → skip install.
 --
--- Deterministic key: uuid5(NS_HASH, "module_registry:{pub_name}")
+-- Deterministic key: uuid5(NS_HASH, "service_modules_manifest:{pub_name}")
 -- =============================================================================
 
 CREATE TABLE [dbo].[service_modules_manifest] (
@@ -365,7 +368,7 @@ CREATE TABLE [dbo].[service_modules_manifest] (
   [priv_created_on]       DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   [priv_modified_on]      DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   CONSTRAINT [PK_service_modules_manifest] PRIMARY KEY ([key_guid]),
-  CONSTRAINT [UQ_smr_name] UNIQUE ([pub_name])
+  CONSTRAINT [UQ_smm_name] UNIQUE ([pub_name])
 );
 GO
 
@@ -393,7 +396,7 @@ GO
 --                        drop_constraint, drop_index)
 --   task_disposition    (reversible, irreversible, transient, cancellable)
 --
--- Deterministic key: uuid5(NS_HASH, "task_ddl:{operation}:{target}")
+-- Deterministic key: uuid5(NS_HASH, "service_tasks_ddl:{operation}.{target}")
 -- where target is the fully-qualified schema target the operation acts on
 -- (e.g., "service_tasks_ddl", "service_tasks_ddl.IX_std_status").
 -- Re-declaring the same logical change hits the same row.
@@ -415,13 +418,13 @@ CREATE TABLE [dbo].[service_tasks_ddl] (
   [priv_modified_on]            DATETIMEOFFSET(7) NOT NULL DEFAULT (SYSDATETIMEOFFSET()),
   CONSTRAINT [PK_service_tasks_ddl] PRIMARY KEY ([key_guid]),
   CONSTRAINT [FK_std_status] FOREIGN KEY ([ref_status_enum_guid])
-    REFERENCES [dbo].[system_objects_enums] ([key_guid]),
+    REFERENCES [dbo].[service_enums] ([key_guid]),
   CONSTRAINT [FK_std_operation] FOREIGN KEY ([ref_operation_enum_guid])
-    REFERENCES [dbo].[system_objects_enums] ([key_guid]),
+    REFERENCES [dbo].[service_enums] ([key_guid]),
   CONSTRAINT [FK_std_disposition] FOREIGN KEY ([ref_disposition_enum_guid])
-    REFERENCES [dbo].[system_objects_enums] ([key_guid]),
+    REFERENCES [dbo].[service_enums] ([key_guid]),
   CONSTRAINT [FK_std_declared_by] FOREIGN KEY ([ref_declared_by_module_guid])
-    REFERENCES [dbo].[service_modules_registry] ([key_guid])
+    REFERENCES [dbo].[service_modules_manifest] ([key_guid])
 );
 GO
 
@@ -452,7 +455,7 @@ GO
 -- startup (hot path, small set). All other ops lazy-load on first use
 -- via PK seek on key_guid.
 --
--- Deterministic key: uuid5(NS_HASH, "database_operation:{pub_op}")
+-- Deterministic key: uuid5(NS_HASH, "service_database_operations:{pub_op}")
 -- =============================================================================
 
 CREATE TABLE [dbo].[service_database_operations] (

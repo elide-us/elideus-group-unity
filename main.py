@@ -2,6 +2,7 @@ import logging
 
 logging.basicConfig(level=logging.DEBUG)
 
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 # from fastapi.staticfiles import StaticFiles

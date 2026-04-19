@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from . import BaseModule
 from .database_operations_module import DatabaseOperationsModule
 
+logger = logging.getLogger(__name__.split('.')[-1])
 
 class DatabaseMaintenanceModule(BaseModule):
   def __init__(self, app: FastAPI):
@@ -14,8 +15,8 @@ class DatabaseMaintenanceModule(BaseModule):
 
   async def startup(self):
     self._ops = self.get_module(DatabaseOperationsModule)
-    await self._ops.on_ready()
-    self.mark_ready()
+    await self._ops.on_sealed()
+    self.raise_seal()
 
   async def on_seal(self):
     await super().on_seal()
