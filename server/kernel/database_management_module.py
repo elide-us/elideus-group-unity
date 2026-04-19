@@ -45,11 +45,11 @@ class DatabaseManagementModule(BaseModule):
         logger.error("Unknown provider")
         return
 
+    self._loop_task = asyncio.create_task(self._monitor_loop())
     self.raise_seal()
 
   async def on_seal(self):
-    await super().on_seal()
-    self._loop_task = asyncio.create_task(self._monitor_loop())
+    pass
 
   async def on_drain(self):
     self._loop_stop.set()
@@ -61,6 +61,7 @@ class DatabaseManagementModule(BaseModule):
     self._mgmt_provider = None
 
   async def _monitor_loop(self):
+    await self.module_manager.on_sealed()
     logger.info("Monitor loop started (rate=%.2fs)", self._poll_rate)
     while not self._loop_stop.is_set():
       try:

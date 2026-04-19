@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #
 # Selects one concrete database provider at startup based on the SQL_PROVIDER
 # environment variable, opens its connection pool, and exposes two methods —
-# `query` and `execute` — that route through the `BaseDatabaseProvider`
+# `query` and `execute` — that route through the `DatabaseTransactionProvider`
 # contract. Callers above this layer never import or reference a provider
 # class directly; the provider is an implementation detail of this module.
 #
 # This module is the single point of coupling between the provider contract
 # and a concrete implementation. Adding a new database backend means: write
-# a `BaseDatabaseProvider` subclass, add a branch to the match in `startup()`.
+# a `DatabaseTransactionProvider` subclass, add a branch to the match in `startup()`.
 #
 # -- Contract ----------------------------------------------------------------
 #   query(sql, params)   -> parsed JSON (dict | list) | None
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   sequenceDiagram
 #     participant Ops as DatabaseOperationsModule
 #     participant Exec as DatabaseExecutionModule
-#     participant Prov as BaseDatabaseProvider
+#     participant Prov as DatabaseTransactionProvider
 #     participant Impl as MssqlProvider
 #
 #     Ops->>Exec: query(sql, params)
@@ -75,11 +75,11 @@ class DatabaseExecutionModule(BaseModule):
 
     provider_name = env.get("SQL_PROVIDER")
     if provider_name is None:
-      logger.error("Variable '%s' is not present.", provider_name)
+      logger.error("Variable 'SQL_PROVIDER' is not present.")
       return
     
     if not provider_name:
-      logger.error("Variable '%s' is not set. You must configure one database provider.", provider_name)
+      logger.error("Variable 'SQL_PROVIDER' is not set. You must configure one database provider.")
       return
 
     if provider_name == "AZURE_SQL_CONNECTION_STRING":
@@ -127,7 +127,7 @@ class DatabaseExecutionModule(BaseModule):
   async def execute(self, query: str, params: tuple | None = None) -> int:
     if self._provider is None:
       logger.error("No active provider")
-      return 0
+      return -1
     return await self._provider.execute(query, params)
   
   def get_base_provider(self) -> DatabaseTransactionProvider | None:

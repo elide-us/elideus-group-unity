@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # ----------------------------------------------------------------------------
 # [ServiceEnumModule]
 # ----------------------------------------------------------------------------
-# Enumeration lookup backed by `system_objects_enums`.
+# Enumeration lookup backed by `service_enums`.
 #
 # Bootstrap-phase registry module. Pre-loads all enum rows at startup,
 # then lazy-loads on cache miss via PK seek. Follows the canonical cache
@@ -91,7 +91,7 @@ class ServiceEnumModule(BaseModule):
     self._ns_hash = uuid.UUID(ns)
 
     bootstrap_sql = """
-      SELECT key_guid, pub_enum_type, pub_name, pub_value
+      SELECT pub_enum_type, pub_name, pub_value
       FROM service_enums
       FOR JSON PATH;
     """
@@ -102,12 +102,10 @@ class ServiceEnumModule(BaseModule):
       return
 
     rows = raw if isinstance(raw, list) else [raw]
-    for entry in rows:
-      self._cache[entry["key_guid"]] = {
-        "enum_type": entry["pub_enum_type"],
-        "name": entry["pub_name"],
-        "value": entry["pub_value"]
-      }
+    self._cache = [
+      {"enum_type": r["pub_enum_type"], "name": r["pub_name"], "value": r["pub_value"]}
+      for r in rows
+    ]
 
     logger.info("Loaded %d enum entries", len(self._cache))
     self.raise_seal()
@@ -121,46 +119,11 @@ class ServiceEnumModule(BaseModule):
   async def shutdown(self):
     self._cache.clear()
 
-  def _enum_guid(self, enum_type: str, name: str) -> str:
-    return deterministic_guid(self._ns_hash, "enum", f"{enum_type}:{name}")
-
-  async def _load_enum(self, guid: str) -> dict[str, Any] | None:
-    sql = """
-      SELECT key_guid, pub_enum_type, pub_name, pub_value
-      FROM system_objects_enums
-      WHERE key_guid = ?
-      FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
-    """
-    raw = await self._db.query(sql, (guid,))
-    if raw is None:
-      logging.error("Unable to load enum by guid '%s'", guid)
-      return None
-    self._cache[raw["key_guid"]] = {
-      "enum_type": raw["pub_enum_type"],
-      "name": raw["pub_name"],
-      "value": raw["pub_value"]
-    }
-    return self._cache[raw["key_guid"]]
-
-  async def get(self, enum_type: str, name: str) -> int | None:
-    guid = self._enum_guid(enum_type, name)
-    entry = self._cache.get(guid)
-    if entry is not None:
-      return entry["value"]
-    entry = await self._load_enum(guid)
-    if entry is None:
-      logging.error("Enum '%s:%s' not found", enum_type, name)
-      return None
-    return entry["value"]
-
-  def get_guid(self, enum_type: str, name: str) -> str:
-    return self._enum_guid(enum_type, name)
-
-  def get_by_guid(self, guid: str) -> dict[str, Any] | None:
-    entry = self._cache.get(guid)
-    if entry is None:
-      logging.error("GUID '%s' not in cache", guid)
-    return entry
+  def get(self, enum_type: str, name: str) -> int | None:
+    for entry in self._cache.values():
+      if entry["enum_type"] == enum_type and entry["name"] == name:
+        return entry["value"]
+    return None
 
   def list_type(self, enum_type: str) -> list[dict[str, Any]]:
     return [

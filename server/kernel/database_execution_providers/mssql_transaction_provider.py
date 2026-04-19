@@ -1,4 +1,5 @@
 import logging, aioodbc, json
+from typing import Any
 
 from . import DatabaseTransactionProvider
 
@@ -16,7 +17,7 @@ class MssqlProvider(DatabaseTransactionProvider):
       self.pool = None
       logger.info("Connection pool closed")
 
-  async def query(self, query: str, params: tuple | None = None) -> any:
+  async def query(self, query: str, params: tuple | None = None) -> Any:
     async with self.pool.acquire() as conn:
       async with conn.cursor() as cur:
         await cur.execute(query, params or ())
@@ -30,8 +31,12 @@ class MssqlProvider(DatabaseTransactionProvider):
           return None
         return json.loads("".join(parts))
 
-  async def execute(self, query: str, params: tuple | None = None) -> int | None:
-    async with self.pool.acquire() as conn:
-      async with conn.cursor() as cur:
-        await cur.execute(query, params or ())
-        return cur.rowcount
+  async def execute(self, query: str, params: tuple | None = None) -> int:
+    try:
+      async with self.pool.acquire() as conn:
+        async with conn.cursor() as cur:
+          await cur.execute(query, params or ())
+          return cur.rowcount
+    except Exception as e:
+      logger.error("Execute failed: %s", e)
+      return -1

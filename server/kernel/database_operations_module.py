@@ -1,4 +1,4 @@
-import logging, uuid
+import logging
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from . import BaseModule
 from .database_execution_module import DatabaseExecutionModule
 from .environment_variables_module import EnvironmentVariablesModule
-from server.helpers import deterministic_guid
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -23,20 +22,15 @@ class DBRequest:
 #
 # Callers submit a `DBRequest(op, params)` — `op` is a short human-readable
 # name registered in `service_database_operations`; `params` is a dict whose
-# values are bound positionally to the resolved SQL. The module resolves the
-# op name to a deterministic GUID, looks the GUID up in an in-memory cache,
-# and dispatches the cached SQL through `DatabaseExecutionModule`. On cache
-# miss the row is lazy-loaded from the ops table by PK seek.
+# values are bound positionally to the resolved SQL. The module looks the
+# op name up in an in-memory cache and dispatches the cached SQL through
+# `DatabaseExecutionModule`. On cache miss the row is lazy-loaded by
+# natural-key seek against the UQ_sdo_op unique constraint.
 #
 # The SQL text itself is chosen per active provider — the startup match on
 # SQL_PROVIDER fixes `_query_column` to one of `pub_query_mssql`,
 # `pub_query_postgres`, or `pub_query_mysql`. Callers never see which
 # variant ran.
-#
-# This module is the canonical reference pattern for bootstrap-phase
-# registry modules: deterministic-GUID key, bootstrap SELECT with
-# `FOR JSON PATH`, in-memory cache, PK-seek lazy load on miss, private
-# `_flush(op)` and public `flush()` for invalidation.
 #
 # -- Contract ----------------------------------------------------------------
 #   query(DBRequest)   -> parsed JSON (dict | list) | None
@@ -51,8 +45,7 @@ class DBRequest:
 # the distinction is `None` (unknown op) vs `0` (op ran, no rows affected).
 #
 # -- Dependencies ------------------------------------------------------------
-#   EnvironmentVariablesModule — reads NS_HASH for GUID derivation and
-#   SQL_PROVIDER to select the query column.
+#   EnvironmentVariablesModule — reads SQL_PROVIDER to select the query column.
 #   DatabaseExecutionModule — all SQL goes through its contract.
 #
 # -- Typical Access Pattern --------------------------------------------------
@@ -67,12 +60,11 @@ class DBRequest:
 #     participant Exec as DatabaseExecutionModule
 #
 #     Caller->>Ops: query(DBRequest("user_by_guid", {"guid": g}))
-#     Ops->>Ops: _op_guid("user_by_guid")
-#     Ops->>Cache: lookup
+#     Ops->>Cache: lookup by pub_op
 #     alt cache hit
 #       Cache-->>Ops: {query: "..."}
 #     else cache miss
-#       Ops->>Exec: query(lookup_sql, (guid,))
+#       Ops->>Exec: query(lookup_sql, (op,))
 #       Exec-->>Ops: {query: "..."}
 #       Ops->>Cache: store
 #     end
@@ -86,27 +78,15 @@ class DBRequest:
 class DatabaseOperationsModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
-    self._registry: dict[str, dict[str, Any]] = {}
-    self._ns_hash: uuid.UUID | None = None
+    self._registry: dict[str, str] = {}
     self._db: DatabaseExecutionModule | None = None
+    self._query_column: str | None = None
 
-  async def on_seal(self):
-    pass
-
-  async def on_drain(self):
-    pass
-  
   async def startup(self):
     self._db = self.get_module(DatabaseExecutionModule)
     await self._db.on_sealed()
 
     env = self.get_module(EnvironmentVariablesModule)
-
-    ns = env.get("NS_HASH")
-    if ns is None:
-        logger.error("NS_HASH not set")
-        return
-    self._ns_hash = uuid.UUID(ns)
 
     match env.get("SQL_PROVIDER"):
       case "AZURE_SQL_CONNECTION_STRING":
@@ -133,64 +113,60 @@ class DatabaseOperationsModule(BaseModule):
 
     ops = raw if isinstance(raw, list) else [raw]
     for entry in ops:
-      guid = self._op_guid(entry["pub_op"])
-      self._registry[guid] = {"query": entry["query"]}
+      self._registry[entry["pub_op"]] = entry["query"]
 
     logger.info("Loaded %d operations", len(self._registry))
     self.raise_seal()
 
+  async def on_seal(self):
+    pass
 
+  async def on_drain(self):
+    pass
 
   async def shutdown(self):
     self._registry.clear()
 
-  def _op_guid(self, op: str) -> str:
-    return deterministic_guid(self._ns_hash, "database_operation", op)
-
-  async def _load_op(self, guid: str) -> dict[str, Any] | None:
+  async def _load_op(self, op: str) -> str | None:
     sql = f"""
       SELECT {self._query_column} AS query
       FROM service_database_operations
-      WHERE key_guid = ?
+      WHERE pub_op = ?
       AND {self._query_column} IS NOT NULL
       FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
     """
-    raw = await self._db.query(sql, (guid,))
+    raw = await self._db.query(sql, (op,))
     if raw is None:
-      logger.error("Unable to load query by key '%s'", guid)
+      logger.error("Unable to load op '%s'", op)
       return None
-    self._registry[guid] = {"query": raw["query"]}
-    return self._registry[guid]
+    self._registry[op] = raw["query"]
+    return self._registry[op]
 
   def _flush(self, op: str):
-    guid = self._op_guid(op)
-    removed = self._registry.pop(guid, None)
+    removed = self._registry.pop(op, None)
     if removed:
       logger.info("Flushed op '%s'", op)
 
   async def query(self, request: DBRequest) -> Any:
-    guid = self._op_guid(request.op)
-    entry = self._registry.get(guid)
-    if entry is None:
-      entry = await self._load_op(guid)
-      if entry is None:
+    sql = self._registry.get(request.op)
+    if sql is None:
+      sql = await self._load_op(request.op)
+      if sql is None:
         logger.error("Unknown op '%s'", request.op)
         return None
     params = tuple(request.params.values()) if request.params else ()
-    return await self._db.query(entry["query"], params)
+    return await self._db.query(sql, params)
 
   async def execute(self, request: DBRequest) -> int | None:
-    guid = self._op_guid(request.op)
-    entry = self._registry.get(guid)
-    if entry is None:
-      entry = await self._load_op(guid)
-      if entry is None:
+    sql = self._registry.get(request.op)
+    if sql is None:
+      sql = await self._load_op(request.op)
+      if sql is None:
         logger.error("Unknown op '%s'", request.op)
         return None
     params = tuple(request.params.values()) if request.params else ()
-    return await self._db.execute(entry["query"], params)
+    return await self._db.execute(sql, params)
 
   def flush(self):
     self._registry.clear()
     logger.info("Registry cache flushed")
-      
