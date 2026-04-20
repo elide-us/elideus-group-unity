@@ -83,60 +83,124 @@ boundary undermines that foundation.
 
 ## 3. The three roles
 
-Every subsystem is composed of three roles. Each role has one reason
-to change.
+Every subsystem is composed of three roles — **Manager**, **Executor**,
+and **Provider** — each with one reason to change. Each role is an
+abstract slot in the pattern, and each slot has a small set of
+concrete *role-names* that describe what that specific module does
+within its subsystem. The abstract role answers "what class of
+responsibility does this module have in the pattern?"; the role-name
+answers "what kind of work, specifically?"
 
-### Manager
+### 3.1 The taxonomy
 
-The **Manager** is the subsystem's public contract. It accepts work
-from application code, enforces policy, and delegates execution. It
-does not own the external resource, does not speak any protocol, and
-does not know which concrete provider is installed. Its entire job is
-to expose a stable, well-named API to the rest of the application.
+The vocabulary is finite and the slots do not share names with each
+other.
 
-Manager-role names reflect the **nature of the contract boundary**:
-
-| Name | Boundary | When to use |
+| Slot | Role-name | What it describes |
 |---|---|---|
-| **Interface** | symmetrical — flow goes both directions through the manager | the subsystem mediates inbound *and* outbound traffic (e.g. IoGateway) |
-| **Operations** | hot-path — callers request, manager serves | the subsystem handles frequent request/response work (e.g. Auth, Database reads/writes) |
-| **Management** | privileged — access is queue-mediated, never direct | the subsystem performs destructive or serialized work that must not be invocable in-process (e.g. Database DDL) |
+| **Manager** | **Operations** | Hot-path public contract — callers request, manager serves. Used for frequent request/response work (Database reads/writes, Auth). |
+| **Manager** | **Maintenance** | Privileged public contract — callers declare intent, which is persisted for later dispatch. Used for destructive or serialized work that must not be invocable in-process (Database DDL). |
+| **Manager** | **Interface** | Symmetrical public contract — traffic flows through the manager in both directions. Used when the subsystem mediates both inbound and outbound traffic (IoGateway). |
+| **Executor** | **Execution** | In-process executor that dispatches directly through its provider contract. Paired with Operations and Interface managers. |
+| **Executor** | **Management** | Queue-mediated executor that polls a declaration queue and dispatches through its provider contract on its own cadence. Paired with Maintenance managers. |
+| **Provider** | **Provider** | Mediates an external resource through a protocol-agnostic contract. Used when the work is a direct call to something outside Unity (SQL backends, identity providers, transports). |
+| **Provider** | **Worker** | Performs dispatched work handed to it by its executor. Used when the work is asynchronous relative to the declaration — performed later, possibly by something separable from the dispatcher itself (DDL application). |
+| **Provider** | **Gateway** | Normalizes traffic into or out of the subsystem. Used by the symmetrical boundary where the provider role is neither resource mediation nor dispatched work but bidirectional shape translation (IoGateway's RPC, MCP, API, Discord providers). |
 
-These three names cover every manager in the kernel today. New names
-may be introduced when future subsystems present contract shapes
-these don't cover; the naming principle is the contract's nature, not
-the subsystem's vendor or protocol.
+The Manager role and the Executor role each pair naturally with
+specific role-names on the other slot. Operations managers pair with
+Execution executors. Maintenance managers pair with Management
+executors. Interface managers pair with Execution executors. The
+Provider slot's role-name is chosen per-subsystem based on what the
+provider actually does.
 
-### Executor
+### 3.2 Why the taxonomy has two axes
 
-The **Executor** owns the resource handle — the connection pool, the
-HTTP client set, the transport lifecycles. It selects a concrete
-provider at startup based on configuration, opens the resource, and
-exposes a provider-agnostic surface to its manager. Executors are the
-single point of coupling between the subsystem's provider contract
-and a concrete implementation; adding a new backend means writing a
-provider subclass and adding a branch to the executor's startup
-selection.
+The naming can be confusing because Maintenance and Management look
+similar and Operations and Execution look similar. They are naming
+different things.
 
-Executor names follow the form `<Subsystem>ExecutionModule`:
+**Slot** (Manager / Executor / Provider) describes **which class of
+responsibility** the module has in the pattern: is it the public
+contract, the resource-owning dispatcher, or the protocol-specific
+implementation?
+
+**Role-name** (Operations, Maintenance, Interface, Execution,
+Management, Provider, Worker, Gateway) describes **what kind of
+work** the module does: is it hot-path serving, privileged
+declaration, symmetric bidirectional flow, direct dispatch,
+queue-mediated dispatch, resource mediation, dispatched work, or
+shape normalization?
+
+Both axes are load-bearing. Dropping the slot axis would conflate
+modules with different responsibilities (`DatabaseOperationsModule`
+the manager vs. `DatabaseExecutionModule` the executor — both sit on
+the hot path but have different jobs). Dropping the role-name axis
+would conflate subsystems with different contract boundaries (a hot-
+path Operations manager and a privileged Maintenance manager have
+the same slot but shouldn't have the same name).
+
+### 3.3 Manager
+
+The Manager is the subsystem's public contract. It accepts work from
+application code, enforces policy, and delegates execution. It does
+not own the external resource, does not speak any protocol, and does
+not know which concrete provider is installed. Its entire job is to
+expose a stable, well-named API to the rest of the application.
+
+Manager role-names reflect the nature of the contract boundary —
+hot-path, privileged, or symmetric. See the taxonomy table in §3.1.
+New role-names may be added if a future subsystem exposes a contract
+boundary none of these cover, but Operations, Maintenance, and
+Interface are expected to cover most cases.
+
+### 3.4 Executor
+
+The Executor owns the resource handle — the connection pool, the
+HTTP client set, the transport lifecycles, the task queue. It
+selects a concrete provider at startup based on configuration, opens
+the resource, and exposes a provider-agnostic surface to its
+manager. Executors are the single point of coupling between the
+subsystem's provider contract and a concrete implementation; adding
+a new backend means writing a provider subclass and adding a branch
+to the executor's startup selection.
+
+Executor names follow the form `<Subsystem><ExecutorRoleName>Module`:
 `DatabaseExecutionModule`, `AuthExecutionModule`,
-`IoGatewayExecutionModule`. When a subsystem exposes a second
-contract boundary, it adds a second executor that composes over the
-first — the Database subsystem demonstrates this with
-`DatabaseManagementModule`, which handles the Management boundary by
-composing a second provider layer over the connection pool owned by
-`DatabaseExecutionModule`. Composition is the extension mechanism
-for the executor contract; each executor owns its own provider
-dispatch while sharing the underlying resource. Mechanics in
-`provider_composition.md`.
+`IoGatewayExecutionModule`, `DatabaseManagementModule`. When a
+subsystem exposes a second contract boundary, it adds a second
+executor that composes over the first — the Database subsystem
+demonstrates this with `DatabaseManagementModule`, which handles the
+Maintenance/Management axis by composing a second provider layer
+over the connection pool owned by `DatabaseExecutionModule`.
+Composition is the extension mechanism for the executor contract;
+each executor owns its own provider dispatch while sharing the
+underlying resource. Mechanics in `provider_composition.md`.
 
-### Provider
+### 3.5 Provider
 
-A **Provider** is an ABC that isolates protocol-specific
-implementation. Each concrete provider corresponds to one external
-backend, identity source, transport, external service, or recognized
-token format. Providers never leak into application code — they are
-an implementation detail of the executor that hosts them.
+A Provider is an ABC that isolates protocol-specific, work-specific,
+or shape-specific implementation. Each concrete provider corresponds
+to one external backend, identity source, transport, external
+service, recognized token format, or unit of dispatchable work.
+Providers never leak into application code — they are an
+implementation detail of the executor that hosts them.
+
+The Provider slot has three role-names because providers answer
+three different kinds of question:
+
+- **Provider** — "how does Unity talk to this external resource?"
+- **Worker** — "how is this unit of dispatched work performed?"
+- **Gateway** — "how does this transport's native shape map to
+  Unity's normalized envelope, in both directions?"
+
+A subsystem may use one or more provider role-names. Database uses
+Provider on the Execution axis (`MssqlProvider`) and Worker on the
+Management axis (workers that apply DDL from the task queue). Auth
+uses Provider. IoGateway uses Gateway. Future subsystems may
+introduce new provider role-names if they answer a genuinely new
+kind of question; the existing three are expected to cover most
+cases.
 
 Provider naming is **folder-scoped**. Each subsystem has its own
 provider folder (`database_execution_providers/`,
@@ -164,11 +228,11 @@ vendor that hosts it.
 ```mermaid
 flowchart TB
   App[Application code<br/>modules, RPC handlers, extensions]
-  Mgr[Manager<br/><i>Interface · Operations · Management</i>]
-  Exec[Executor<br/><i>owns resource handle</i>]
-  Contract[Provider ABC<br/><i>protocol-agnostic contract</i>]
-  Impl[Concrete Provider<br/><i>one per backend</i>]
-  Res[(External resource)]
+  Mgr[Manager<br/><i>Operations · Maintenance · Interface</i>]
+  Exec[Executor<br/><i>Execution · Management</i>]
+  Contract[Provider ABC<br/><i>Provider · Worker · Gateway</i>]
+  Impl[Concrete Provider<br/><i>one per backend/work type/transport</i>]
+  Res[(External resource<br/>or work queue)]
 
   App -->|public contract| Mgr
   Mgr -->|dispatch| Exec
@@ -194,13 +258,14 @@ that imports a concrete provider class.
 
 Unity's subsystems vary along the nature of their contract boundary.
 Some have one boundary; some have two. The taxonomy maps each
-boundary type to a manager role.
+boundary type to a manager role-name and its paired executor
+role-name.
 
-| Boundary | Manager role | Dispatch mode | Characteristics |
-|---|---|---|---|
-| **Symmetrical** | Interface | in-process, bidirectional | Traffic flows through the manager in both directions. Normalization on inbound, denormalization on outbound. |
-| **Hot-path** | Operations | in-process, synchronous-feeling | Frequent request/response. One await per hop, no queuing. |
-| **Privileged** | Management | queue-mediated | Callers declare intent by persisting a row. A monitor loop picks it up on its own cadence. Never invocable directly in-process. |
+| Boundary | Manager role-name | Executor role-name | Dispatch mode | Characteristics |
+|---|---|---|---|---|
+| **Symmetrical** | Interface | Execution | in-process, bidirectional | Traffic flows through the manager in both directions. Normalization on inbound, denormalization on outbound. |
+| **Hot-path** | Operations | Execution | in-process, synchronous-feeling | Frequent request/response. One await per hop, no queuing. |
+| **Privileged** | Maintenance | Management | queue-mediated | Callers declare intent by persisting a row. A monitor loop picks it up on its own cadence. Never invocable directly in-process. |
 
 A subsystem has one manager per boundary it exposes. Database has two
 managers because it exposes both a hot-path boundary (operations) and
@@ -222,18 +287,19 @@ after the fact. In-process method dispatch satisfies none of these
 requirements.
 
 The privileged boundary sits between two kernel modules in the same
-subsystem: a **maintenance manager** and a **management executor**.
-The handoff is a row in a database table. The maintenance manager
-writes the row; the management executor polls the table on its
+subsystem: a **Maintenance manager** and a **Management executor**.
+The handoff is a row in a database table. The Maintenance manager
+writes the row; the Management executor polls the table on its
 configured cadence and dispatches the work through its composed
-provider.
+provider, which on this axis is a Worker rather than a resource-
+mediating Provider.
 
 The consequences of this shape:
 
-- **No races.** The maintenance manager and the management executor
+- **No races.** The Maintenance manager and the Management executor
   never hold shared in-process state. Concurrent `declare_ddl_task`
   calls serialize through the table's insert order.
-- **Controlled cadence.** The management executor runs only as often
+- **Controlled cadence.** The Management executor runs only as often
   as its poll interval allows. Nothing in application code can force
   an immediate DDL application.
 - **Restart safety.** Pending tasks persist across restarts. Running
@@ -245,10 +311,11 @@ The consequences of this shape:
   ownership of a task in-memory; the row's status column and the
   database's own concurrency controls arbitrate.
 
-Queue semantics, task lifecycle, monitor-loop cadence, and drainstop
-coordination are specific to the Database subsystem's implementation
-and are detailed in `database_management.md`. The pattern itself —
-queue-mediated handoff as the safety model for privileged work —
+Queue semantics, task lifecycle, monitor-loop cadence, Worker
+dispatch mechanics, and drainstop coordination are specific to the
+Database subsystem's implementation and are detailed in
+`database_management.md`. The pattern itself — queue-mediated
+handoff to a Worker as the safety model for privileged work —
 generalizes, and is the same shape the core-tier Task Orchestration
 subsystem uses for application-facing workflow state.
 
@@ -265,8 +332,8 @@ pool.
 
 | Axis | Manager | Executor | Provider contract | Concrete |
 |---|---|---|---|---|
-| Operations (hot path) | `DatabaseOperationsModule` | `DatabaseExecutionModule` | `DatabaseTransactionProvider` | `MssqlProvider` |
-| Maintenance (privileged) | `DatabaseMaintenanceModule` | `DatabaseManagementModule` | `DatabaseManagementProvider` | `MssqlManagementProvider` |
+| Operations (hot path) | `DatabaseOperationsModule` | `DatabaseExecutionModule` | `DatabaseTransactionProvider` (Provider role-name) | `MssqlProvider` |
+| Maintenance (privileged) | `DatabaseMaintenanceModule` | `DatabaseManagementModule` | `DatabaseManagementProvider` (Worker role-name) | `MssqlManagementProvider` |
 
 Hot-path dispatch is in-process: caller → `DatabaseOperationsModule`
 → `DatabaseExecutionModule` → `DatabaseTransactionProvider` →
@@ -276,7 +343,7 @@ Privileged dispatch is queue-mediated:
 `DatabaseMaintenanceModule.declare_ddl_task(...)` writes a row to
 `service_tasks_ddl`; `DatabaseManagementModule` runs a monitor loop
 gated by the `TaskDdlPollRate` configuration key that picks up
-pending rows and dispatches through `DatabaseManagementProvider`.
+pending rows and dispatches through the composed Worker.
 
 The two providers share the connection pool. `DatabaseExecutionModule`
 owns the pool; `DatabaseManagementModule` borrows the live
@@ -286,8 +353,8 @@ owns the pool; `DatabaseManagementModule` borrows the live
 composition — how the handle is exposed, when it is valid to request,
 and why composition is preferred over inheritance — are in
 `provider_composition.md`, which also carries the two-axis diagram
-showing the shared pool and the task table boundary. Queue semantics
-and task lifecycle are in `database_management.md`.
+showing the shared pool and the task table boundary. Queue semantics,
+Worker dispatch, and task lifecycle are in `database_management.md`.
 
 ---
 
@@ -297,7 +364,7 @@ The Auth subsystem has a single hot-path boundary.
 
 | Manager | Executor | Provider contract | Concrete providers |
 |---|---|---|---|
-| `AuthOperationsModule` | `AuthExecutionModule` | `AuthProvider` | identity providers + token providers (see below) |
+| `AuthOperationsModule` | `AuthExecutionModule` | `AuthProvider` (Provider role-name) | identity providers + token providers (see below) |
 
 `AuthOperationsModule` exposes the public contract for authentication
 and authorization resolution. `AuthExecutionModule` owns the
@@ -415,7 +482,7 @@ to reflect that symmetry.
 
 | Manager | Executor | Provider contract | Concrete providers |
 |---|---|---|---|
-| `IoGatewayInterfaceModule` | `IoGatewayExecutionModule` | `IoGatewayProvider` | `RpcProvider`, `McpProvider`, `ApiProvider`, `DiscordProvider`, plus outbound service providers |
+| `IoGatewayInterfaceModule` | `IoGatewayExecutionModule` | `IoGatewayProvider` (Gateway role-name) | `RpcProvider`, `McpProvider`, `ApiProvider`, `DiscordProvider`, plus outbound service providers |
 
 `IoGatewayInterfaceModule` is the first-class single entry point for
 all traffic crossing the Unity boundary. `IoGatewayExecutionModule`
