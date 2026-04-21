@@ -342,7 +342,9 @@ connection pool.
 | Axis | Manager | Executor | Provider-slot classes |
 |---|---|---|---|
 | Operations (hot path) | `DatabaseOperationsModule` | `DatabaseExecutionModule` | `MssqlProvider` (Provider) |
-| Maintenance (privileged) | `DatabaseMaintenanceModule` | `DatabaseManagementModule` | `MssqlManagementProvider` (Provider), `DatabaseManagementWorker` (Worker) |
+| Maintenance (privileged) | `DatabaseMaintenanceModule` | `DatabaseManagementModule` | `MssqlManagementProvider` (Provider), `MssqlManagementWorker` (Worker) |
+
+
 
 The two resource providers share the connection pool.
 `DatabaseExecutionModule` owns the pool; `DatabaseManagementModule`
@@ -350,11 +352,12 @@ borrows the live `DatabaseTransactionProvider` during its own
 startup and composes a `DatabaseManagementProvider` over it. Full
 composition mechanics are in `provider_composition.md`.
 
-The `DatabaseManagementWorker` implements the kernel's `BaseWorker`
+The `MssqlManagementWorker` implements the kernel's `BaseWorker`
 contract for its lifecycle; its work contract is supplied by the
-core-tier Task Orchestration substrate (§6). Full details of the
-Database subsystem's maintenance axis, the declaration surface, and
-the provider contracts are in `database_management.md`.
+core-tier task orchestration substrate pending implementation.
+There will likley be a `BaseDatabaseManagementWorker` between 
+`BaseWorker` (lifecycle) and `MssqlManagementWorker` (implementation)
+where the additional claim/dispatch contract will be defined.
 
 ---
 

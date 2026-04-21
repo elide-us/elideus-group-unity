@@ -1,34 +1,8 @@
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-
-# ----------------------------------------------------------------------------
-# DdlTaskClaim
-# ----------------------------------------------------------------------------
-# Minimum shape returned by the management provider's claim operation.
-# Fields:
-#   task_id       Identifier for subsequent mark_completed / mark_failed calls.
-#   action_guid   FK into reflection_rpc_functions. Worker resolves this to
-#                 the implementing method and dispatches.
-#   disposition   FK into system_dispositions. Governs retry and rollback
-#                 eligibility. See docs/database_management.md.
-#   payload       Action input. Opaque to the worker; interpreted by the
-#                 resolved action function.
-#   retry_count   Number of prior attempts on this task. The worker enforces
-#                 retry-limit policy against this.
-# ----------------------------------------------------------------------------
-
-@dataclass
-class DdlTaskClaim:
-  task_id: int
-  action_guid: str
-  disposition: int
-  payload: dict[str, Any]
-  retry_count: int
 
 
 # ----------------------------------------------------------------------------
@@ -73,10 +47,6 @@ class DatabaseTransactionProvider(ABC):
 #
 #   DDL emission — forward mutation methods invoked by the worker to apply
 #   declared schema changes.
-#
-#   Queue operations — claim/complete/fail/recover against the DDL task
-#   table. Engine-specific SQL lives in the concrete implementation;
-#   the worker never writes SQL directly.
 #
 # Capability reporting methods expose engine features that influence how
 # a DDL is emitted.
@@ -124,24 +94,6 @@ class DatabaseManagementProvider(ABC):
 
   @abstractmethod
   async def drop_index(self, table: str, index_name: str) -> bool:
-    pass
-
-  # -- Queue operations ------------------------------------------------------
-
-  @abstractmethod
-  async def claim_next_task(self) -> DdlTaskClaim | None:
-    pass
-
-  @abstractmethod
-  async def mark_task_completed(self, task_id: int, result: dict[str, Any] | None = None) -> bool:
-    pass
-
-  @abstractmethod
-  async def mark_task_failed(self, task_id: int, error: str) -> bool:
-    pass
-
-  @abstractmethod
-  async def recover_stale_claims(self) -> int:
     pass
 
   # -- Capability reporting --------------------------------------------------
