@@ -1,30 +1,43 @@
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 # ----------------------------------------------------------------------------
-# BaseDatabaseProvider
+# DdlTaskClaim
 # ----------------------------------------------------------------------------
-# Core provider contract for SQL execution. One concrete implementation
-# per supported database engine. The DatabaseExecutionModule selects one
-# at startup based on SQL_PROVIDER and owns the instance for the lifetime
-# of the application.
-#
-# -- Contract ----------------------------------------------------------------
-#   connect()                    -> opens connection pool
-#   disconnect()                 -> closes connection pool
-#   query(sql, params)           -> parsed JSON (dict | list) | None
-#   execute(sql, params)         -> rowcount (int)
-#
-# All SELECTs use FOR JSON PATH. The provider concatenates fragmented
-# JSON rows and returns parsed Python objects. `execute` returns rowcount
-# as a success code.
-#
-# -- Implementations ---------------------------------------------------------
-#   mssql_provider.MssqlProvider (aioodbc, MSSQL / Azure SQL)
-#
+# Minimum shape returned by the management provider's claim operation.
+# Fields:
+#   task_id       Identifier for subsequent mark_completed / mark_failed calls.
+#   action_guid   FK into reflection_rpc_functions. Worker resolves this to
+#                 the implementing method and dispatches.
+#   disposition   FK into system_dispositions. Governs retry and rollback
+#                 eligibility. See docs/database_management.md.
+#   payload       Action input. Opaque to the worker; interpreted by the
+#                 resolved action function.
+#   retry_count   Number of prior attempts on this task. The worker enforces
+#                 retry-limit policy against this.
+# ----------------------------------------------------------------------------
+
+@dataclass
+class DdlTaskClaim:
+  task_id: int
+  action_guid: str
+  disposition: int
+  payload: dict[str, Any]
+  retry_count: int
+
+
+# ----------------------------------------------------------------------------
+# DatabaseTransactionProvider
+# ----------------------------------------------------------------------------
+# Primary provider contract. Owns the connection pool for the lifetime of
+# DatabaseExecutionModule. One concrete implementation per SQL engine.
+# All SELECTs use FOR JSON PATH; query returns parsed JSON; execute returns
+# rowcount with -1 as the failure sentinel.
 # ----------------------------------------------------------------------------
 
 class DatabaseTransactionProvider(ABC):
@@ -49,45 +62,24 @@ class DatabaseTransactionProvider(ABC):
 
 
 # ----------------------------------------------------------------------------
-# BaseDatabaseManagementProvider
+# DatabaseManagementProvider
 # ----------------------------------------------------------------------------
-# Extended provider contract for DDL operations. Composes with an existing
-# BaseDatabaseProvider instance — does NOT own the connection pool. The
-# execution provider handles DML (query/execute); this provider handles
-# schema introspection and DDL emission.
+# Composed provider contract. Borrows the primary provider's handle via
+# DatabaseExecutionModule.get_base_provider(); does not own the connection
+# pool. Three method groups:
 #
-# Constructed during startup_finally() by the DatabaseManagementModule,
-# which receives the live provider reference from DatabaseExecutionModule.
-# After construction, the ModuleManager sets _sealed = True; all methods
-# check sealed state before executing.
+#   Schema introspection — live schema reads used by the worker to compute
+#   deltas against declared schema.
 #
-# -- Contract ----------------------------------------------------------------
+#   DDL emission — forward mutation methods invoked by the worker to apply
+#   declared schema changes.
 #
-#   Schema introspection:
-#     read_tables(schema)                -> list of table metadata dicts
-#     read_columns(table, schema)        -> list of column metadata dicts
-#     read_indexes(table, schema)        -> list of index metadata dicts
-#     read_constraints(table, schema)    -> list of constraint metadata dicts
+#   Queue operations — claim/complete/fail/recover against the DDL task
+#   table. Engine-specific SQL lives in the concrete implementation;
+#   the worker never writes SQL directly.
 #
-#   DDL emission:
-#     create_table(spec)                 -> bool (success/failure)
-#     alter_column(table, spec)          -> bool
-#     create_index(spec)                 -> bool
-#     drop_constraint(table, name)       -> bool
-#     drop_index(table, name)            -> bool
-#
-#   Capability reporting:
-#     supports_online_index_rebuild()    -> bool
-#     supports_native_vector()           -> bool
-#
-# -- Implementations ---------------------------------------------------------
-#   mssql_management.MssqlManagementProvider
-#
-# -- Security ----------------------------------------------------------------
-# This provider is only accessible through the DatabaseManagementModule,
-# which is only callable by DatabaseMaintenanceModule during bootstrap
-# reconciliation. Not exposed via RPC, MCP, or any external interface.
-#
+# Capability reporting methods expose engine features that influence how
+# a DDL is emitted.
 # ----------------------------------------------------------------------------
 
 class DatabaseManagementProvider(ABC):
@@ -132,6 +124,24 @@ class DatabaseManagementProvider(ABC):
 
   @abstractmethod
   async def drop_index(self, table: str, index_name: str) -> bool:
+    pass
+
+  # -- Queue operations ------------------------------------------------------
+
+  @abstractmethod
+  async def claim_next_task(self) -> DdlTaskClaim | None:
+    pass
+
+  @abstractmethod
+  async def mark_task_completed(self, task_id: int, result: dict[str, Any] | None = None) -> bool:
+    pass
+
+  @abstractmethod
+  async def mark_task_failed(self, task_id: int, error: str) -> bool:
+    pass
+
+  @abstractmethod
+  async def recover_stale_claims(self) -> int:
     pass
 
   # -- Capability reporting --------------------------------------------------

@@ -2,13 +2,16 @@ import logging
 
 from typing import Any
 
-from . import DatabaseTransactionProvider, DatabaseManagementProvider
+from . import DatabaseTransactionProvider, DatabaseManagementProvider, DdlTaskClaim
 
 logger = logging.getLogger(__name__.split('.')[-1])
+
 
 class MssqlManagementProvider(DatabaseManagementProvider):
   def __init__(self, provider: DatabaseTransactionProvider):
     super().__init__(provider)
+
+  # -- Schema introspection --------------------------------------------------
 
   async def read_tables(self, schema: str = "dbo") -> list[dict[str, Any]]:
     return []
@@ -21,6 +24,8 @@ class MssqlManagementProvider(DatabaseManagementProvider):
 
   async def read_constraints(self, table: str, schema: str = "dbo") -> list[dict[str, Any]]:
     return []
+
+  # -- DDL emission ----------------------------------------------------------
 
   async def create_table(self, spec: dict[str, Any]) -> bool:
     return False
@@ -36,6 +41,22 @@ class MssqlManagementProvider(DatabaseManagementProvider):
 
   async def drop_index(self, table: str, index_name: str) -> bool:
     return False
+
+  # -- Queue operations ------------------------------------------------------
+
+  async def claim_next_task(self) -> DdlTaskClaim | None:
+    return None
+
+  async def mark_task_completed(self, task_id: int, result: dict[str, Any] | None = None) -> bool:
+    return False
+
+  async def mark_task_failed(self, task_id: int, error: str) -> bool:
+    return False
+
+  async def recover_stale_claims(self) -> int:
+    return 0
+
+  # -- Capability reporting --------------------------------------------------
 
   def supports_online_index_rebuild(self) -> bool:
     return True
