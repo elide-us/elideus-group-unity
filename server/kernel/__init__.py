@@ -11,12 +11,36 @@ MODULES_FOLDER = os.path.dirname(__file__)
 
 T = TypeVar("T", bound="BaseModule")
 
+
+# ----------------------------------------------------------------------------
+# BaseWorker
+# ----------------------------------------------------------------------------
+# Minimal abstract interface for long-running worker classes. A Worker is
+# instantiated and owned by a module; it is not autodiscovered. The Worker
+# role-name occupies the Provider slot in the Manager/Executor/Provider
+# taxonomy (see docs/kernel_architecture.md §3) for subsystems that perform
+# dispatched work rather than mediating an external resource.
+#
+#   start()   Begin the worker's work loop as a background task.
+#   stop()    Signal the loop to stop and await its completion.
+# ----------------------------------------------------------------------------
+
+class BaseWorker(ABC):
+  @abstractmethod
+  async def start(self) -> None:
+    pass
+
+  @abstractmethod
+  async def stop(self) -> None:
+    pass
+
+
 # ----------------------------------------------------------------------------
 # BaseModule
 # ----------------------------------------------------------------------------
-# Abstract base for all application modules. Every module file matching
+# Abstract base for all modules. Every module file matching
 # *_module.py is autodiscovered, instantiated, and registered by the
-# ModuleManager during startup_init().
+# ModuleManager during _on_startup_init().
 #
 # -- Lifecycle contract ------------------------------------------------------
 #
@@ -71,19 +95,29 @@ T = TypeVar("T", bound="BaseModule")
 # depends on which. It only calls the contract methods.
 #
 # -- Sealed state ------------------------------------------------------------
-# After all on_seal() calls complete, ModuleManager raises its
-# _sealed_event. Modules check manager state via `manager.is_sealed`
-# (sync read) or `await manager.on_sealed()` (async wait). Both are
-# backed by the single event. The event is in-memory only — a full
-# shutdown/startup cycle clears and re-raises it through the normal
-# phase boundaries.
+# "Sealed" has two distinct scopes:
+#
+#   Module-sealed   This module has finished startup() and its contract
+#                   is safe to call. Set by raise_seal(); observed by
+#                   dependents via `await dep.on_sealed()`. Backed by
+#                   this module's own _sealed_event.
+#
+#   Manager-sealed  All modules have completed on_seal() and the full
+#                   application graph is initialized. Set by the
+#                   ModuleManager at the end of _on_startup_complete();
+#                   observed via `manager.is_sealed` (sync read) or
+#                   `await manager.on_sealed()` (async wait). Backed by
+#                   the manager's _sealed_event.
+#
+# Both events are in-memory only. A full shutdown/startup cycle clears
+# and re-raises them through the normal phase boundaries.
 #
 # ----------------------------------------------------------------------------
 
 class BaseModule(ABC):
   def __init__(self, app: FastAPI):
     self.app = app
-    self._ready_event = asyncio.Event()
+    self._sealed_event = asyncio.Event()
 
   @abstractmethod
   async def startup(self):
@@ -121,10 +155,10 @@ class BaseModule(ABC):
     pass
 
   def raise_seal(self):
-    self._ready_event.set()
+    self._sealed_event.set()
 
   async def on_sealed(self):
-    await self._ready_event.wait()
+    await self._sealed_event.wait()
 
   @property
   def module_manager(self) -> "ModuleManager":
@@ -137,7 +171,7 @@ class BaseModule(ABC):
 # ----------------------------------------------------------------------------
 # ModuleManager
 # ----------------------------------------------------------------------------
-# Application module lifecycle manager. Discovers, instantiates, and
+# Module lifecycle manager. Discovers, instantiates, and
 # manages the startup/shutdown lifecycle of all modules. Independent of
 # the application lifecycle (lifespan) — the lifespan calls into the
 # manager, not the other way around.
@@ -172,15 +206,13 @@ class BaseModule(ABC):
 # -- Design principles -------------------------------------------------------
 #
 # The module manager only calls the contract. It does not:
-#   - Orchestrate composition between modules
-#   - Pass provider references or configuration
+#   - Pass references between modules
 #   - Know which module depends on which
 #   - Enforce ordering beyond the phase boundaries
 #
 # Modules are self-sufficient. They use get_module() to find each other
-# and on_sealed() to sequence themselves. Composition of extended
-# providers (e.g., management provider onto execution provider) is
-# internal to the module that needs it.
+# and on_sealed() to sequence themselves. The manager's job ends at
+# invoking the five contract methods at the right phase.
 #
 # -- Autodiscovery -----------------------------------------------------------
 # Scans the modules folder for files matching *_module.py. Converts
@@ -318,3 +350,4 @@ class ModuleManager:
   def _on_shutdown_complete(self):
     self._sealed_event.clear()
     logger.info("on_shutdown_complete - unsealed")
+    
