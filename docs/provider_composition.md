@@ -260,7 +260,7 @@ completed.
 5. Start any background tasks the composing manager owns. Management
    modules typically own a monitor loop; its first `await` is
    `self.module_manager.on_sealed()` per the operational-work
-   pattern in `module_lifecycle.md` §6.3.
+   pattern in `module_lifecycle.md` §7.
 
 6. Call `raise_seal()`.
 
@@ -299,45 +299,6 @@ sequenceDiagram
 ```
 
 Four hops, all in-process. No composed provider participates.
-
-### 8.2 Privileged flow through the composed provider
-
-```mermaid
-sequenceDiagram
-  participant Declarer as app module / admin RPC
-  participant Maint as DatabaseMaintenanceModule
-  participant Queue as service_tasks_ddl
-  participant Mgmt as DatabaseManagementModule
-  participant Comp as DatabaseManagementProvider<br/>(MssqlManagementProvider)
-  participant Prim as DatabaseTransactionProvider<br/>(MssqlProvider)
-  participant Pool as connection pool
-
-  Declarer->>Maint: declare_ddl_task
-  Maint->>Queue: INSERT row
-  Maint-->>Declarer: task id
-
-  Note over Mgmt: monitor loop polls<br/>every TaskDdlPollRate
-
-  Mgmt->>Queue: SELECT pending
-  Queue-->>Mgmt: pending row
-  Mgmt->>Comp: create_table / alter_column / …
-  Comp->>Prim: execute(DDL)
-  Prim->>Pool: acquire connection
-  Pool-->>Prim: connection
-  Prim-->>Comp: rowcount
-  Comp-->>Mgmt: success
-  Mgmt->>Queue: UPDATE row status
-```
-
-Three observations. First, the declarer's call returns as soon as
-the queue row is written; the work happens later, on the monitor
-loop's cadence. Second, the composed provider dispatches DDL
-through the primary's `execute` method — it does not acquire the
-pool itself, does not import pool types, and does not know what
-kind of pool is underneath. Third, the primary provider is unaware
-it is being composed over; the queries it runs look identical to a
-hot-path caller's queries. The composition is a fact about who
-holds the reference, not about how the reference is used.
 
 ---
 
@@ -393,12 +354,8 @@ either.
 ## 11. What this doc doesn't cover
 
 The queue semantics between maintenance and management — task
-lifecycle, monitor-loop cadence, status columns, drainstop
-coordination — are specific to the Database subsystem and are
-covered in `database_management.md`. The rationale for having two
-contracts on the database in the first place is in
-`kernel_architecture.md` §7. Module lifecycle mechanics — the
-phases, the seal protocol, operational-work gating — are in
-`module_lifecycle.md`. This document is about the provider layer
-specifically: how providers contract, compose, and hand off
-resources.
+lifecycle, state machine, claim/dispatch mechanics, drain 
+coordination - are core-tier automation substrate concerns.
+Current design thinking is in 
+`docs/future/task_automation_design.md`; concrete specification
+lands when core is specified.

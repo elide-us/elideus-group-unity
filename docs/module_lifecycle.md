@@ -1,517 +1,543 @@
-# Kernel Architecture
+# Module Lifecycle
 
 **Product:** TheOracleRPC
 **Codename:** Unity
 
-**Spec document — `docs/kernel_architecture.md`**
-**Status:** authoritative reference for the Manager/Executor/Provider pattern and the kernel subsystem inventory.
+**Spec document — `docs/module_lifecycle.md`**
+**Status:** authoritative reference for the module lifecycle contract.
 
 ---
 
 ## 1. Purpose and scope
 
-Unity's kernel hosts a small number of **subsystems** that mediate
-between the application and classes of external resource or boundary.
-Every subsystem follows the same structural pattern: a **Manager**, an
-**Executor**, and one or more **Providers**. This document defines
-that pattern, names its roles, and shows how each current kernel
-subsystem realizes it.
+Every module in Unity — kernel, core, application, extension —
+participates in a single lifecycle contract defined by `BaseModule`.
+This document specifies that contract: the lifecycle phases, the
+contract methods modules implement, the seal protocol that sequences
+dependencies, the `ModuleManager` that drives it, and the `BaseWorker`
+contract for long-running loops owned by modules.
 
-Unity's codebase is layered. The **kernel** is the bottom tier — it
-mediates external boundaries and has no knowledge of application
-semantics. The **core** tier sits on top of the kernel and builds the
-application foundation (users, security context, storage, task
-orchestration) that every deployment needs. Application modules,
-extensions, and packages layer above core. Dependencies run one
-direction: kernel never imports core, core never imports application
-modules. Core modules use the same Manager/Executor/Provider pattern
-defined here; their specifications live in `core_architecture.md` and
-the per-subsystem core specs.
+Lifecycle is universal. It is not specific to the kernel tier. A
+kernel module, a core module, an application module, and an
+extension module all implement the same five contract methods,
+participate in the same phases, and resolve dependencies through the
+same seal protocol. Tiering (kernel / core / application / extension)
+governs what a module *does* and what it *depends on*; lifecycle
+governs how it *starts, runs, and stops*, and that is the same for
+all of them.
 
-Lifecycle mechanics — how modules start, seal, drain, and shut down —
-belong in `module_lifecycle.md`. Provider-layer mechanics —
-contracts, primary vs. composed providers, handle borrowing — belong
-in `provider_composition.md`. Each kernel subsystem has its own spec
-that details the concrete contract, data model, and seeding:
-`database_management.md`, `auth.md`, `iogateway.md`.
+The Manager/Executor/Provider pattern that some modules participate
+in is covered in `kernel_architecture.md`. Provider composition is
+covered in `provider_composition.md`. This document is about
+lifecycle only.
 
 ---
 
-## 2. What a kernel subsystem is
+## 2. What a module is
 
-A kernel subsystem is a cluster of kernel modules that together
-mediate one category of external interaction. "External" here is
-strict: a database backend, an identity provider, an inbound
-transport, an outbound API. Anything where Unity talks to something
-that is not Unity, and where that conversation has protocol variation
-worth abstracting.
+A module is a Python class derived from `BaseModule`, living in a
+file matching the pattern `*_module.py`. The `ModuleManager`
+autodiscovers these files at startup: it scans the kernel modules
+folder (and, in time, the core and application folders), converts
+each filename to a PascalCase class name (`database_execution_module.py`
+→ `DatabaseExecutionModule`), imports the file, instantiates the
+class, and registers the instance by type.
 
-Three kernel subsystems exist:
+Three properties follow from autodiscovery:
 
-- **Database** — SQL execution against a provider-swappable backend.
-- **Auth** — identity verification, authorization resolution, and
-  token decoding against external identity providers and internal
-  token formats.
-- **IoGateway** — inbound and outbound traffic across all transports
-  and external services.
+**Modules are singletons per class.** The manager holds one instance
+per registered class. Dependency lookups (`get_module(Type)`) return
+the same instance to every caller.
 
-Core subsystems — **Users**, **Security**, **Storage**, and **Task
-Orchestration** — also follow the Manager/Executor/Provider pattern
-defined in this document but are not part of the kernel. They consume
-kernel subsystems and extend them (for example, the Users module
-registers identity-creation hooks with Auth). See
-`core_architecture.md`.
+**Module registration is implicit.** A module registers itself by
+existing in the right folder with the right filename. There is no
+decorator, no registry file, no explicit import list. Adding a
+module to the system is a matter of dropping the file in place; the
+manager picks it up on the next boot.
 
-Application code — application modules, extensions, packages — talks
-to a kernel or core subsystem only through its manager. Application
-code never imports an executor, never references a provider class,
-and never touches the external resource directly. The manager is the
-entire agreement between the subsystem and the rest of the
-application.
-
-The strictness of these patterns — queue-mediated privileged
-boundaries, IoGateway's single entry point, database-backed state
-for anything that has to survive a restart — is what makes multi-node
-deployment possible. Quorum, node-startup coordination, and
-horizontal scaling mechanics are out of scope for this document, but
-the patterns defined here are the foundation those mechanics will
-rest on. Any shortcut around a manager, any direct resource access
-from application code, and any in-process bypass of a privileged
-boundary undermines that foundation.
+**The class name must match the filename.** Conversion is strict:
+`snake_to_pascal` on the filename stem must produce the class name.
+Mismatches are logged and skipped.
 
 ---
 
-## 3. The three roles
+## 3. The lifecycle contract
 
-Every subsystem is composed of three roles. Each role has one reason
-to change.
+Every module implements five contract methods. Three are abstract
+and must be overridden; two have default behavior that can be used
+as-is or overridden.
 
-### Manager
+| Method | Phase | Abstract | Purpose |
+|---|---|---|---|
+| `__init__(app)` | 1 | implicit | Sync construction. Initialize empty caches, null references. No async work, no dependency resolution. |
+| `startup()` | 2 | yes | Async. Resolve dependencies, load data, open resources, `raise_seal()`. |
+| `on_seal()` | 3 | no | Async. Post-init work. Default runs manifest-seal hook chain (§6). |
+| `on_drain()` | 4 | yes | Async. Pre-shutdown signal. Stop accepting work, flush in-flight operations. |
+| `shutdown()` | 5 | yes | Async. Teardown. Clear caches, close resources, null references. |
 
-The **Manager** is the subsystem's public contract. It accepts work
-from application code, enforces policy, and delegates execution. It
-does not own the external resource, does not speak any protocol, and
-does not know which concrete provider is installed. Its entire job is
-to expose a stable, well-named API to the rest of the application.
-
-Manager-role names reflect the **nature of the contract boundary**:
-
-| Name | Boundary | When to use |
-|---|---|---|
-| **Interface** | symmetrical — flow goes both directions through the manager | the subsystem mediates inbound *and* outbound traffic (e.g. IoGateway) |
-| **Operations** | hot-path — callers request, manager serves | the subsystem handles frequent request/response work (e.g. Auth, Database reads/writes) |
-| **Management** | privileged — access is queue-mediated, never direct | the subsystem performs destructive or serialized work that must not be invocable in-process (e.g. Database DDL) |
-
-These three names cover every manager in the kernel today. New names
-may be introduced when future subsystems present contract shapes
-these don't cover; the naming principle is the contract's nature, not
-the subsystem's vendor or protocol.
-
-### Executor
-
-The **Executor** owns the resource handle — the connection pool, the
-HTTP client set, the transport lifecycles. It selects a concrete
-provider at startup based on configuration, opens the resource, and
-exposes a provider-agnostic surface to its manager. Executors are the
-single point of coupling between the subsystem's provider contract
-and a concrete implementation; adding a new backend means writing a
-provider subclass and adding a branch to the executor's startup
-selection.
-
-Executor names follow the form `<Subsystem>ExecutionModule`:
-`DatabaseExecutionModule`, `AuthExecutionModule`,
-`IoGatewayExecutionModule`. When a subsystem exposes a second
-contract boundary, it adds a second executor that composes over the
-first — the Database subsystem demonstrates this with
-`DatabaseManagementModule`, which handles the Management boundary by
-composing a second provider layer over the connection pool owned by
-`DatabaseExecutionModule`. Composition is the extension mechanism
-for the executor contract; each executor owns its own provider
-dispatch while sharing the underlying resource. Mechanics in
-`provider_composition.md`.
-
-### Provider
-
-A **Provider** is an ABC that isolates protocol-specific
-implementation. Each concrete provider corresponds to one external
-backend, identity source, transport, external service, or recognized
-token format. Providers never leak into application code — they are
-an implementation detail of the executor that hosts them.
-
-Provider naming is **folder-scoped**. Each subsystem has its own
-provider folder (`database_execution_providers/`,
-`auth_execution_providers/`, `iogateway_interface_providers/`), and
-provider class names disambiguate within that folder rather than
-across the whole codebase. Short names are preferred:
-`MssqlProvider`, `GoogleProvider`, `RpcProvider`. Cross-subsystem
-collisions are resolved by import path — a `DiscordProvider` in
-`auth_execution_providers/` and a `DiscordProvider` in
-`iogateway_interface_providers/` coexist cleanly because they
-represent genuinely different services (identity verification vs.
-transport) under the same vendor.
-
-When a single vendor exposes multiple resources with different
-endpoints, claim shapes, or lifecycle characteristics, each is its
-own provider (`MicrosoftProvider` for consumer MSA,
-`EntraProvider` for tenant identities). The principle is that
-providers are split by the *resource* they address, not by the
-vendor that hosts it.
+The phases run in strict order across the module set. Within a
+phase, all modules run concurrently.
 
 ---
 
-## 4. Pattern diagram
+## 4. Phase-by-phase behavior
+
+The `ModuleManager` drives the phases. Its own `startup()` and
+`shutdown()` methods are composed of sub-phases that each fan out
+across the registered module set.
+
+### 4.1 Startup phases
+
+**Phase 1 — `_on_startup_init` (sync).** The manager discovers
+`*_module.py` files, imports each, instantiates the expected class,
+and registers it in the instance map keyed by class type. Module
+constructors run here. No async work occurs in this phase; it is
+fully synchronous so that every module exists before any module's
+async lifecycle begins. By the end of Phase 1, the full instance
+registry is populated.
+
+**Phase 2 — `_on_startup_all` (async, concurrent).** The manager
+calls `startup()` on every module concurrently via
+`asyncio.gather`. Modules resolve their dependencies, load data,
+open resources, and call `raise_seal()` when ready. Ordering
+emerges from seal waits (§5), not from dispatch order.
+
+**Phase 3 — `_on_startup_complete` (async, concurrent).** The
+manager calls `on_seal()` on every module concurrently. This phase
+is for post-init work that requires the full module graph to be
+live — reconciliation, finalization, manifest sealing (§6). After
+every `on_seal()` completes, the manager raises its own
+`_sealed_event`, signaling manager-sealed (§5.2).
+
+### 4.2 Shutdown phases
+
+**Phase 4 — `_on_shutdown_init` (async, concurrent).** The manager
+calls `on_drain()` on every module concurrently. This is the
+pre-shutdown signal: modules stop accepting new work, flush
+in-flight operations, and release external holds that should be
+released before teardown. `on_drain()` is *not* teardown — it's
+quiescence.
+
+**Phase 5 — `_on_shutdown_all` (async, concurrent).** The manager
+calls `shutdown()` on every module concurrently. Modules clear
+caches, close pools, null references. The manager then clears the
+instance registry.
+
+**Phase 6 — `_on_shutdown_complete` (sync).** The manager clears
+its own `_sealed_event`, signaling unsealed. A full shutdown/startup
+cycle re-raises it through Phase 3.
+
+### 4.3 Phase diagram
 
 ```mermaid
 flowchart TB
-  App[Application code<br/>modules, RPC handlers, extensions]
-  Mgr[Manager<br/><i>Interface · Operations · Management</i>]
-  Exec[Executor<br/><i>owns resource handle</i>]
-  Contract[Provider ABC<br/><i>protocol-agnostic contract</i>]
-  Impl[Concrete Provider<br/><i>one per backend</i>]
-  Res[(External resource)]
+  subgraph Startup
+    P1[Phase 1: _on_startup_init<br/>sync · discover, instantiate, register]
+    P2[Phase 2: _on_startup_all<br/>async · gather startup across modules]
+    P3[Phase 3: _on_startup_complete<br/>async · gather on_seal, raise manager-sealed]
+  end
 
-  App -->|public contract| Mgr
-  Mgr -->|dispatch| Exec
-  Exec --> Contract
-  Contract -.implements.-> Impl
-  Impl --> Res
+  subgraph Shutdown
+    P4[Phase 4: _on_shutdown_init<br/>async · gather on_drain]
+    P5[Phase 5: _on_shutdown_all<br/>async · gather shutdown, clear registry]
+    P6[Phase 6: _on_shutdown_complete<br/>sync · clear manager-sealed]
+  end
 
-  classDef agnostic fill:#e8f0ff,stroke:#4a6fa5,color:#000
-  classDef specific fill:#f0e8ff,stroke:#6a4aa5,color:#000
-
-  class App,Mgr,Exec,Contract agnostic
-  class Impl,Res specific
+  P1 --> P2 --> P3
+  P3 -. running .-> P4
+  P4 --> P5 --> P6
 ```
 
-Everything above the provider contract line is protocol-agnostic.
-Everything at or below the concrete provider is protocol-specific.
-The executor is the chokepoint — it is the only kernel component
-that imports a concrete provider class.
+---
+
+## 5. The seal protocol
+
+The manager does not enforce dependency ordering between modules.
+Modules sequence themselves through the seal protocol: an
+asyncio-event-based handshake that lets a module declare "I am
+initialized and safe to call" and lets dependents wait for that
+declaration before proceeding.
+
+The word *sealed* has two distinct scopes. Both matter, and
+confusing them creates subtle startup bugs.
+
+### 5.1 Module-sealed
+
+A module is **module-sealed** when it has called `raise_seal()` at
+the end of its own `startup()`. Dependents observe this by awaiting
+`dependency.on_sealed()`.
+
+The typical dependency pattern in `startup()`:
+
+```python
+async def startup(self):
+  dep = self.get_module(SomeDependencyModule)
+  await dep.on_sealed()
+  # … use dep's contract safely here …
+  self.raise_seal()
+```
+
+`get_module()` returns the dependency's instance from Phase 1's
+registration — the instance always exists by the time Phase 2 runs.
+What it may not have done yet is finished its own `startup()`;
+`await dep.on_sealed()` parks until it has.
+
+`raise_seal()` is a one-way transition. There is no `lower_seal()`.
+Once a module signals sealed, it remains sealed for the remainder of
+the phase sequence. A module that fails to reach a workable state
+may return from `startup()` *without* calling `raise_seal()`,
+leaving the event unset; dependents awaiting that seal will park
+indefinitely. This is the intentional signaling mechanism for
+"this module could not initialize" — see §8.
+
+Backed by: `BaseModule._sealed_event` (one per module instance).
+
+### 5.2 Manager-sealed
+
+The system is **manager-sealed** when every module has completed
+`on_seal()` — that is, when Phase 3 has finished. The manager's own
+`_sealed_event` is raised at that point.
+
+Module code observes manager-sealed in two ways:
+
+- **Sync read** via the `is_sealed` property on the manager. Useful
+  for diagnostic paths or for request handlers checking readiness.
+- **Async wait** via `await self.module_manager.on_sealed()`. This
+  is the canonical pattern for *operational work* — long-running
+  loops owned by modules (workers, monitors, pollers) whose first
+  statement is a wait on manager-sealed so they do not begin
+  processing until the full graph is live.
+
+Backed by: `ModuleManager._sealed_event` (one per manager).
+
+### 5.3 Why two scopes
+
+Module-sealed answers "is this specific module's contract safe to
+call?" and is the coordination primitive between modules during
+`startup()`. Manager-sealed answers "is the whole application
+ready?" and is the coordination primitive for operational work that
+needs the full graph.
+
+A module that begins its monitor loop during its own `startup()`
+waits on manager-sealed before doing any work — otherwise the loop
+might dispatch calls into modules that are themselves still sealing.
+A module resolving a dependency in `startup()` waits on the
+dependency's module-seal — not manager-seal — because manager-seal
+hasn't been raised yet in Phase 2, and using it would deadlock.
+
+Both events are in-memory only. A full shutdown/startup cycle
+clears and re-raises them through Phase 6 and Phase 3.
 
 ---
 
-## 5. Contract-boundary taxonomy
+## 6. `on_seal()` and the manifest-seal hooks
 
-Unity's subsystems vary along the nature of their contract boundary.
-Some have one boundary; some have two. The taxonomy maps each
-boundary type to a manager role.
+`on_seal()` has a default body. Unlike the other async contract
+methods, it is not abstract — `BaseModule.on_seal()` is implemented
+and runs a three-hook chain that handles module installation
+sealing against `service_modules_manifest`.
 
-| Boundary | Manager role | Dispatch mode | Characteristics |
-|---|---|---|---|
-| **Symmetrical** | Interface | in-process, bidirectional | Traffic flows through the manager in both directions. Normalization on inbound, denormalization on outbound. |
-| **Hot-path** | Operations | in-process, synchronous-feeling | Frequent request/response. One await per hop, no queuing. |
-| **Privileged** | Management | queue-mediated | Callers declare intent by persisting a row. A monitor loop picks it up on its own cadence. Never invocable directly in-process. |
+A module may:
 
-A subsystem has one manager per boundary it exposes. Database has two
-managers because it exposes both a hot-path boundary (operations) and
-a privileged boundary (maintenance). Auth and IoGateway each have one
-boundary.
+- **Leave the default in place.** The default walks the hook chain.
+  For a module that doesn't contribute to the manifest, the hooks'
+  default bodies do nothing and the chain is a no-op.
+- **Override with a pass.** A module that has post-init work to
+  skip *and* doesn't want the manifest chain either writes
+  `async def on_seal(self): pass`. Many modules do this — the
+  manifest seal is opt-in by leaving the default.
+- **Override and call `super().on_seal()`.** A module doing its own
+  post-init work alongside the manifest chain calls the parent and
+  adds its own work.
 
-The privileged boundary is the one where the pattern diverges
-meaningfully from the others. Its properties and the reasons for them
-are covered next.
+The three hooks, in order:
 
----
+**`_hook_fetch_seed_package()`** — Default does nothing. An
+overriding module loads its install manifest (version, DDL
+declarations, seed data) from wherever the module owns it.
 
-## 6. The privileged boundary
+**`_hook_check_version()`** — Default returns `True`. Return `True`
+to indicate the module is already at its current version and no
+install is needed; the chain exits without running the install
+hook. Return `False` to trigger installation.
 
-Some subsystem operations must not be invocable directly from
-application code. DDL emission is the canonical example: it is rare,
-destructive, must be serialized against itself, and must be auditable
-after the fact. In-process method dispatch satisfies none of these
-requirements.
+**`_hook_install_seed_package()`** — Default does nothing. An
+overriding module performs the actual install work: declaring DDL
+tasks for its tables, inserting seed rows, writing a
+`service_modules_manifest` row with `pub_is_sealed = 1` on success.
 
-The privileged boundary sits between two kernel modules in the same
-subsystem: a **maintenance manager** and a **management executor**.
-The handoff is a row in a database table. The maintenance manager
-writes the row; the management executor polls the table on its
-configured cadence and dispatches the work through its composed
-provider.
+The chain catches exceptions from `_hook_install_seed_package()`,
+logs them, and returns without re-raising. A failed install leaves
+the manifest row unsealed (or absent), and the module retries on
+next boot. This is the idempotent retry-from-scratch pattern the
+foundation migration's `service_modules_manifest` table is designed
+for.
 
-The consequences of this shape:
-
-- **No races.** The maintenance manager and the management executor
-  never hold shared in-process state. Concurrent `declare_ddl_task`
-  calls serialize through the table's insert order.
-- **Controlled cadence.** The management executor runs only as often
-  as its poll interval allows. Nothing in application code can force
-  an immediate DDL application.
-- **Restart safety.** Pending tasks persist across restarts. Running
-  tasks either complete or are re-picked up by the next boot.
-- **Auditability.** Every privileged decision is a row, with status
-  and timestamps, before it runs.
-- **Multi-node safety.** When Unity runs on more than one node, the
-  table is the coordination point. Nodes do not need to negotiate
-  ownership of a task in-memory; the row's status column and the
-  database's own concurrency controls arbitrate.
-
-Queue semantics, task lifecycle, monitor-loop cadence, and drainstop
-coordination are specific to the Database subsystem's implementation
-and are detailed in `database_management.md`. The pattern itself —
-queue-mediated handoff as the safety model for privileged work —
-generalizes, and is the same shape the core-tier Task Orchestration
-subsystem uses for application-facing workflow state.
-
-Security considerations for the privileged boundary are covered in
-`security.md`.
+Full install-package mechanics — manifest schema, seed-package
+layout, versioning, rollback semantics — are deferred to a future
+`module_installation.md`. This document specifies only that the
+hooks exist and what their contract is within the lifecycle.
 
 ---
 
-## 7. Database subsystem
+## 7. Operational work: loops owned by modules
 
-The Database subsystem has both a hot-path boundary and a privileged
-boundary. Six modules total, two providers, one shared connection
-pool.
+Many modules own long-running work — poll loops, monitor tasks,
+schedulers, workers. These are started during the owning module's
+`startup()` and stopped during its `on_drain()` or `shutdown()`.
 
-| Axis | Manager | Executor | Provider contract | Concrete |
-|---|---|---|---|---|
-| Operations (hot path) | `DatabaseOperationsModule` | `DatabaseExecutionModule` | `DatabaseTransactionProvider` | `MssqlProvider` |
-| Maintenance (privileged) | `DatabaseMaintenanceModule` | `DatabaseManagementModule` | `DatabaseManagementProvider` | `MssqlManagementProvider` |
+The canonical pattern:
 
-Hot-path dispatch is in-process: caller → `DatabaseOperationsModule`
-→ `DatabaseExecutionModule` → `DatabaseTransactionProvider` →
-`MssqlProvider` → pool. Every hop is one `await`. No queuing.
+```python
+async def startup(self):
+  # … resolve dependencies, construct worker …
+  self._worker = SomeWorker(self.module_manager, …)
+  await self._worker.start()
+  self.raise_seal()
 
-Privileged dispatch is queue-mediated:
-`DatabaseMaintenanceModule.declare_ddl_task(...)` writes a row to
-`service_tasks_ddl`; `DatabaseManagementModule` runs a monitor loop
-gated by the `TaskDdlPollRate` configuration key that picks up
-pending rows and dispatches through `DatabaseManagementProvider`.
+async def on_drain(self):
+  if self._worker is not None:
+    await self._worker.stop()
 
-The two providers share the connection pool. `DatabaseExecutionModule`
-owns the pool; `DatabaseManagementModule` borrows the live
-`DatabaseTransactionProvider` during its own startup via
-`exec_mod.get_base_provider()` and composes a
-`DatabaseManagementProvider` over it. The mechanics of that
-composition — how the handle is exposed, when it is valid to request,
-and why composition is preferred over inheritance — are in
-`provider_composition.md`, which also carries the two-axis diagram
-showing the shared pool and the task table boundary. Queue semantics
-and task lifecycle are in `database_management.md`.
+async def shutdown(self):
+  self._worker = None
+```
 
----
+The worker's loop begins as a background task during `start()`, but
+its first statement inside the loop body is
+`await self._module_manager.on_sealed()`. This parks the loop until
+manager-sealed is raised at the end of Phase 3. Without this wait,
+the worker could dispatch calls into modules still finishing their
+own `startup()` or `on_seal()`, which breaks the contract that
+module-sealed means the module's methods are safe to call.
 
-## 8. Auth subsystem
+This is the operational-work gating rule: **loops owned by modules
+wait on manager-sealed before doing any work**, even though the
+loop task itself is spawned during `startup()`.
 
-The Auth subsystem has a single hot-path boundary.
-
-| Manager | Executor | Provider contract | Concrete providers |
-|---|---|---|---|
-| `AuthOperationsModule` | `AuthExecutionModule` | `AuthProvider` | identity providers + token providers (see below) |
-
-`AuthOperationsModule` exposes the public contract for authentication
-and authorization resolution. `AuthExecutionModule` owns the
-registered provider set and any shared HTTP client state.
-
-### 8.1 The three-method contract
-
-The `AuthProvider` ABC defines three primary methods:
-
-- **`resolve_identity`** — Runs the external identity flow. The user
-  is redirected to an identity provider; the provider returns an
-  assertion carrying a subject identifier; this method resolves that
-  subject to an internal identity GUID. Token normalization — lifting
-  the provider-native token into a common shape — happens here as
-  part of identity resolution. Microsoft's hybrid AD token is the
-  superset model; the normalized shape is derived from it.
-
-- **`resolve_authorization`** — Given an internal identity, resolves
-  the roles, entitlements, and scopes that identity carries at this
-  moment. The output is the security context consumed by RPC's
-  authorization layer. Called on every request after initial
-  authentication, not just at login.
-
-- **`resolve_token`** — Decodes a pre-existing token back to an
-  internal identity without going through a fresh external handshake.
-  Handles bearer tokens (React client sessions), MCP dynamic-client-
-  registration tokens, and static long-lived API tokens. The provider
-  figures out which token format it's looking at and resolves.
-
-All three methods default to returning **unauthorized**. A provider
-that doesn't implement a given method returns unauthorized from it.
-The subsystem as a whole returns unauthorized when no provider
-matches, when no hook is registered for identity creation, or when
-any step in the resolution chain declines. Unauthorized is the safe
-default and the shipping default.
-
-### 8.2 Provider sub-families
-
-Concrete providers fall into two functional shapes under the single
-`AuthProvider` ABC:
-
-**Identity providers** run external OAuth/OIDC flows against
-third-party identity sources. They implement `resolve_identity`
-meaningfully; `resolve_token` typically returns unauthorized
-(identity providers don't decode Unity-issued tokens).
-
-- `GoogleProvider`
-- `MicrosoftProvider` (consumer MSA)
-- `EntraProvider` (Microsoft tenant identities)
-- `DiscordProvider`
-- `AppleProvider` (future)
-- `MetaProvider` (future)
-
-**Token providers** decode Unity-recognized token formats back to
-internal identities. They implement `resolve_token` meaningfully;
-`resolve_identity` typically returns unauthorized (token providers
-don't run external flows).
-
-- `BearerProvider` — React client sessions and other issued bearer
-  tokens.
-- `McpDcrProvider` — MCP dynamic client registration tokens.
-- `StaticApiProvider` — administratively issued long-lived API
-  tokens.
-
-Both sub-families implement `resolve_authorization` against the same
-internal authorization store.
-
-### 8.3 Per-provider configuration
-
-Each provider has a custom table holding its protocol-specific
-configuration: authorization and token endpoints, redirect URI,
-scope set, client credentials reference, and provider-specific
-fields. The table schema varies per provider because the
-configuration surface varies per provider — collapsing them into a
-single generic table would force a lowest-common-denominator shape
-that discards load-bearing detail.
-
-Identity records are keyed by the provider's subject identifier as
-the natural key, not by a Unity-generated UUID. UUIDs are for
-internal entities; external identity correlation uses the identifier
-the provider itself issued.
-
-### 8.4 Hook surface for identity creation
-
-The Auth subsystem is designed to run without a user module. In a
-kernel-only deployment, `resolve_identity` correctly returns
-unauthorized for every external subject — there is no internal
-identity store to resolve against, no user records to match, and
-nothing downstream that would consume an authenticated identity.
-
-`resolve_identity` exposes a **hook surface** that a core-tier user
-module registers against. When a provider resolves a valid external
-assertion whose subject has no existing internal identity, the hook
-is invoked; if a hook is registered, it may create the identity and
-return its GUID. If no hook is registered, the default behavior
-holds: unauthorized. This is the mechanism by which the core-tier
-Users module participates in Auth without Auth importing Users.
-
-Hook signatures, registration mechanics, and the corresponding
-hook on `resolve_token` for stale-token cases are specified in
-`auth.md`.
-
-Full contract, table layouts, and flow details are in `auth.md`.
+`on_drain()` signals the loop to stop and awaits its completion.
+The loop finishes its current iteration's in-flight work, then
+exits. No task is interrupted mid-iteration. `shutdown()` clears
+the worker reference.
 
 ---
 
-## 9. IoGateway subsystem
+## 8. Failure behavior
 
-The IoGateway subsystem has a single symmetrical boundary. This is
-the only subsystem in the kernel where traffic flows through the
-manager in both directions — inbound requests normalize into a
-common envelope, and outbound calls denormalize into each external
-service's native shape. The manager is named `IoGatewayInterfaceModule`
-to reflect that symmetry.
+A module whose `startup()` cannot complete successfully has one
+option: return from `startup()` without calling `raise_seal()`. The
+module-sealed event stays unset. Dependents that await its seal
+park indefinitely — the system is in a half-started state where
+the module is registered but its contract is not usable.
 
-| Manager | Executor | Provider contract | Concrete providers |
-|---|---|---|---|
-| `IoGatewayInterfaceModule` | `IoGatewayExecutionModule` | `IoGatewayProvider` | `RpcProvider`, `McpProvider`, `ApiProvider`, `DiscordProvider`, plus outbound service providers |
+This is intentional. Startup failure is not a panic; it is a signal
+that propagates through the seal protocol. A dependent that parks
+on an unsealed module is surfacing the dependency chain: the log
+will show which module failed to seal, and every downstream module
+will be visibly stuck waiting for it.
 
-`IoGatewayInterfaceModule` is the first-class single entry point for
-all traffic crossing the Unity boundary. `IoGatewayExecutionModule`
-owns the per-provider lifecycles. Concrete providers come in two
-shapes:
+The manager does not time out seal waits, does not cancel parked
+modules, and does not abort startup on individual module failure.
+Phase 2's `asyncio.gather` runs every module's `startup()` to its
+own termination; modules that succeeded continue to run, modules
+that parked stay parked. Phase 3 attempts `on_seal()` on every
+module regardless of whether Phase 2 cleanly sealed every one.
 
-**Inbound transport providers** accept traffic initiated outside
-Unity, normalize it into a common envelope, and hand off to RPC. RPC
-remains the security contract enforcement layer — IoGateway
-normalizes; RPC authorizes and dispatches.
+The practical consequence: a broken module cascades visibly, and
+recovery is a code fix plus a restart. There is no partial-recovery
+mechanism in the lifecycle itself.
 
-- `RpcProvider` — HTTP traffic, including the React client.
-- `McpProvider` — Model Context Protocol.
-- `ApiProvider` — programmable API clients.
-- `DiscordProvider` — Discord bot traffic.
-
-**Outbound service providers** initiate calls from Unity to external
-APIs and return their responses through the same normalization
-surface. These are shaped differently from inbound transports —
-there is no accept loop, the call is request/response with the
-direction inverted, and the concerns that dominate are credential
-handling, rate limits, retry semantics, and (for long-running
-operations) asynchronous result polling. They sit in the same
-subsystem because they share the envelope contract and the
-single-entry-point discipline: nothing in application code calls an
-external API directly, everything goes through the gateway.
-
-Long-running outbound calls — where the initial call returns a job
-handle and the result arrives later — are coordinated by the
-core-tier Task Orchestration subsystem, which owns workflow state,
-polling cadence, and fan-out to downstream destinations. See
-`core_architecture.md`.
-
-This is a significant shift from the legacy system, where
-transport-specific assumptions leaked into RPC handlers and
-authorization logic leaked into transport code. In Unity, every
-transport and every external service is a peer under one contract,
-and the RPC layer sees a single normalized shape regardless of
-origin or direction.
-
-Full envelope shape, transport-specific mappings, outbound-provider
-semantics, and the RPC handoff contract are in `iogateway.md`.
+Exceptions raised from `startup()`, `on_seal()`, `on_drain()`, or
+`shutdown()` bodies propagate out of `asyncio.gather` and are
+logged by the manager's phase wrappers. They do not abort the phase
+for other modules.
 
 ---
 
-## 10. When to add a new kernel subsystem
+## 9. Dependency graph discipline
 
-The kernel is expected to stay small. New kernel subsystems are rare
-— most new functionality belongs in core or application modules that
-consume the existing three kernel subsystems.
+Modules resolve dependencies implicitly through the seal protocol.
+The manager does not know which module depends on which, does not
+pass references, and does not enforce ordering. The dependency
+graph emerges at runtime from the sequence of `get_module()` +
+`await on_sealed()` calls in module `startup()` bodies.
 
-A new kernel subsystem is warranted when all three of these hold:
+Three rules follow.
 
-1. It mediates a category of external boundary that none of
-   Database, Auth, or IoGateway covers. Blob storage, for example,
-   is *not* such a category — it is handled in core because its
-   integration with application data is tight enough to pull it above
-   the kernel tier.
-2. The boundary has protocol variation that benefits from an ABC —
-   multiple backends or services under one contract.
-3. The subsystem must sit below core in the dependency order. If a
-   candidate could equally well live in core and consume existing
-   kernel subsystems, it belongs in core.
+**The graph must be a DAG.** Two modules that each await the other's
+module-seal will deadlock silently. There is no runtime detection
+and no timeout. This is a code error — the lifecycle offers no
+recovery from it.
 
-A new kernel subsystem is **not** warranted when:
+**Use `get_module()` to find dependencies; use `on_sealed()` to wait
+for them.** `get_module()` always returns the registered instance
+(or `None` if the type isn't registered, which is a code error
+distinct from a dependency ordering issue). `on_sealed()` is the
+wait.
 
-- The work is application logic that can live in a core or
-  application module consuming existing kernel managers.
-- The variation is in data or behavior, not protocol — a rules
-  engine, a workflow engine, or a content pipeline is not a kernel
-  subsystem.
-- The resource is already mediated by an existing kernel subsystem
-  at a different level of abstraction (e.g., a new SQL backend is a
-  new provider in the Database subsystem, not a new subsystem).
+**Resolve dependencies once, at the top of `startup()`.** A module
+that resolves a dependency mid-`startup()` — after doing its own
+initialization work — creates a subtle ordering coupling. The
+canonical pattern resolves everything first, awaits seals, then
+proceeds to the module's own init. This keeps the dependency graph
+explicit at the start of the method body.
 
 ---
 
-## 11. What this pattern doesn't cover
+## 10. `ModuleManager` responsibilities
 
-Not every kernel module is part of a subsystem. The Manager/Executor/
-Provider pattern applies where protocol variation and resource
-ownership warrant it; elsewhere, simpler shapes are correct.
+The `ModuleManager` has a deliberately narrow job. It:
 
-- **Pure cache modules** — `SystemConfigurationModule`,
-  `ServiceEnumModule`. These load a table at startup and expose a
-  synchronous lookup API. No external resource, no provider layer,
-  no executor. They are kernel modules that happen to use the
-  Database subsystem's Operations manager during their own startup.
-- **Pure lookup/dispatch modules** — these route calls based on
-  registered data but do not own an external resource. They may
-  consume subsystem managers but do not themselves follow the M/E/P
-  pattern.
-- **The environment module** — `EnvironmentVariablesModule`. Reads a
-  file once at startup. No subsystem shape is appropriate or needed.
+- Discovers modules by filename convention and instantiates them
+- Calls the five contract methods at the right phase
+- Raises and clears its own seal event at phase boundaries
+- Exposes a lookup for `BaseModule.get_module()`
+- Offers a single-module restart (`restart`, §10.1) and a full
+  restart sweep for live reconfiguration scenarios
 
-These modules participate fully in the module lifecycle (startup,
-seal, drain, shutdown) without participating in the subsystem
-pattern. The pattern is applied where it earns its cost, not
-universally.
+It does not:
+
+- Pass references between modules
+- Know which module depends on which
+- Enforce ordering beyond the phase boundaries
+- Detect circular dependencies at runtime
+- Retry failed startups
+- Time out parked seal waits
+
+Modules are self-sufficient. They find each other via
+`get_module()`, sequence via `on_sealed()`, and signal readiness
+via `raise_seal()`. The manager's job ends at invoking the contract
+methods at the right phase.
+
+This narrowness is deliberate. A manager with more responsibility
+becomes the coordination point for every new dependency shape and
+every new failure mode — which is the opposite of what modular
+composition is for. The seal protocol is expressive enough to let
+modules coordinate themselves without the manager mediating.
+
+### 10.1 Restart
+
+The manager exposes a restart capability for scenarios where a
+module needs to be reconfigured without a full application restart —
+typically reloading configuration and rebuilding a connection pool
+or cache.
+
+`restart()` iterates the full instance map and restarts each
+module in turn. `_restart(module_type)` restarts a single module:
+it calls the existing instance's `shutdown()`, constructs a fresh
+instance of the same class, stores it in the instance map
+(replacing the old one), and calls the new instance's `startup()`.
+The new instance runs its own dependency resolution and seal
+protocol from scratch.
+
+Two consequences callers should be aware of:
+
+- **Held references go stale.** Any module that resolved a
+  reference to the restarted module via `get_module()` and cached
+  it is still pointing at the old instance. The lifecycle does not
+  propagate restart notifications. Callers that need to survive a
+  peer restart should re-resolve through `get_module()` on use
+  rather than caching the reference.
+- **Dependents are not re-driven.** Restarting a module does not
+  rerun `startup()` on its dependents. If a dependent's state
+  depends on having resolved against the old instance at startup
+  time, that state is now inconsistent. Single-module restart is
+  appropriate for leaf modules and for modules whose dependents
+  re-resolve per call.
+
+No module or contract in the system currently calls `restart` or
+`_restart`. They exist for operator-initiated live reconfiguration
+when that capability is built out.
+
+---
+
+## 11. `BaseWorker`
+
+A **worker** is a long-running work loop owned by a module. Workers
+are not autodiscovered and do not participate in the lifecycle
+contract directly — they live and die with the module that
+constructs them.
+
+The `BaseWorker` ABC defines two methods:
+
+```python
+class BaseWorker(ABC):
+  @abstractmethod
+  async def start(self) -> None: ...
+
+  @abstractmethod
+  async def stop(self) -> None: ...
+```
+
+`start()` spawns the loop as a background task and returns without
+awaiting it. `stop()` signals the loop to stop (typically via an
+`asyncio.Event`) and awaits the task's completion. The owning
+module constructs the worker during `startup()`, calls `start()`,
+and calls `stop()` during `on_drain()`; see §7 for the pairing with
+lifecycle phases and the manager-sealed gating rule.
+
+How workers fit into the Manager/Executor/Provider taxonomy is
+covered in `kernel_architecture.md` §3.
+
+---
+
+## 12. Minimal module template
+
+The simplest correct module:
+
+```python
+from fastapi import FastAPI
+from . import BaseModule
+
+
+class SomeModule(BaseModule):
+  def __init__(self, app: FastAPI):
+    super().__init__(app)
+    # Initialize empty state here.
+
+  async def startup(self):
+    # Resolve dependencies, load data, open resources.
+    self.raise_seal()
+
+  async def on_seal(self):
+    pass  # or `await super().on_seal()` to run manifest-seal hooks
+
+  async def on_drain(self):
+    pass
+
+  async def shutdown(self):
+    pass  # Clear caches, null references.
+```
+
+Every module implements this shape at minimum. Modules with more
+responsibility fill in the method bodies; modules with dependencies
+resolve them in `startup()`; modules with workers construct and
+start them in `startup()` and stop them in `on_drain()`.
+
+---
+
+## 13. What this doc doesn't cover
+
+The Manager/Executor/Provider subsystem pattern is covered in
+`kernel_architecture.md`. This document specifies how *any* module
+lives, independent of whether it participates in a subsystem.
+
+Provider composition — the handle-borrowing between primary and
+composed providers — is covered in `provider_composition.md`.
+Composed providers are not modules; their lifecycle is bound to
+their composing manager's lifecycle.
+
+Install-seed-package mechanics — the concrete schema of
+`service_modules_manifest`, the layout of seed packages, versioning
+semantics, and install-failure recovery — are deferred to a future
+`module_installation.md`. This document specifies only that the
+hooks exist and what their contract is within `on_seal()`.
+
+Per-subsystem specifications for database, auth, and iogateway
+live in `database_management.md`, `auth.md`, and `iogateway.md`.
+
+Multi-node coordination, quorum, and horizontal scaling mechanics
+are out of scope here. Lifecycle is a single-process concept; the
+seal events are in-memory and not replicated across nodes.
+
+---

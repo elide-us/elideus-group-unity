@@ -1,6 +1,5 @@
 import logging
 
-from typing import Any
 from fastapi import FastAPI
 
 from . import BaseModule
@@ -26,9 +25,6 @@ class DatabaseMaintenanceModule(BaseModule):
 
   async def shutdown(self):
     self._ops = None
-
-  async def declare_ddl_task(self, operation: str, target: str, spec: dict[str, Any], disposition: str) -> str | None:
-    return None
 
   async def reconcile_schema(self) -> None:
     pass

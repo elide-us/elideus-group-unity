@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from . import BaseModule
 from .environment_variables_module import EnvironmentVariablesModule
 from .database_execution_module import DatabaseExecutionModule
-from .system_configuration_module import SystemConfigurationModule
 from .database_execution_providers import DatabaseManagementProvider, DatabaseManagementWorker
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -24,14 +23,6 @@ class DatabaseManagementModule(BaseModule):
     exec_mod = self.get_module(DatabaseExecutionModule)
     await exec_mod.on_sealed()
 
-    cfg = self.get_module(SystemConfigurationModule)
-    await cfg.on_sealed()
-
-    poll_rate: float = 5.0
-    rate_str = cfg.get("TaskDdlPollRate")
-    if rate_str is not None:
-      poll_rate = float(rate_str)
-
     base = exec_mod.get_base_provider()
     if base is None:
       logger.error("No base provider available")
@@ -41,7 +32,7 @@ class DatabaseManagementModule(BaseModule):
       case "AZURE_SQL_CONNECTION_STRING":
         from .database_execution_providers.mssql_management_provider import MssqlManagementProvider
         self._mgmt_provider = MssqlManagementProvider(base)
-        self._worker = DatabaseManagementWorker(self.module_manager, self._mgmt_provider, poll_rate)
+        self._worker = DatabaseManagementWorker()
       case _:
         logger.error("Unknown provider")
         return

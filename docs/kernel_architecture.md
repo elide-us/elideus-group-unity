@@ -14,8 +14,8 @@ Unity's kernel hosts a small number of **subsystems** that mediate
 between the application and classes of external resource or boundary.
 Every subsystem follows the same structural pattern: a **Manager**, an
 **Executor**, and one or more **Providers**. This document defines
-that pattern, names its roles, and shows how each current kernel
-subsystem realizes it.
+that pattern, names its roles, and inventories the kernel subsystems
+that realize it.
 
 Unity's codebase is layered. The **kernel** is the bottom tier — it
 mediates external boundaries and has no knowledge of application
@@ -29,11 +29,11 @@ defined here; their specifications live in `core_architecture.md` and
 the per-subsystem core specs.
 
 Lifecycle mechanics — how modules start, seal, drain, and shut down —
-belong in `module_lifecycle.md`. Provider-layer mechanics —
-contracts, primary vs. composed providers, handle borrowing — belong
-in `provider_composition.md`. Each kernel subsystem has its own spec
-that details the concrete contract, data model, and seeding:
-`database_management.md`, `auth.md`, `iogateway.md`.
+are in `module_lifecycle.md`. Provider-layer mechanics — primary vs.
+composed providers, handle borrowing — are in `provider_composition.md`.
+Each kernel subsystem has its own spec that details the concrete
+contract, data model, and seeding: `database_management.md`,
+`auth.md`, `iogateway.md`.
 
 ---
 
@@ -57,10 +57,9 @@ Three kernel subsystems exist:
 
 Core subsystems — **Users**, **Security**, **Storage**, and **Task
 Orchestration** — also follow the Manager/Executor/Provider pattern
-defined in this document but are not part of the kernel. They consume
-kernel subsystems and extend them (for example, the Users module
-registers identity-creation hooks with Auth). See
-`core_architecture.md`.
+defined here but are not part of the kernel. They consume kernel
+subsystems and extend them (for example, the Users module registers
+identity-creation hooks with Auth). See `core_architecture.md`.
 
 Application code — application modules, extensions, packages — talks
 to a kernel or core subsystem only through its manager. Application
@@ -85,11 +84,11 @@ boundary undermines that foundation.
 
 Every subsystem is composed of three roles — **Manager**, **Executor**,
 and **Provider** — each with one reason to change. Each role is an
-abstract slot in the pattern, and each slot has a small set of
-concrete *role-names* that describe what that specific module does
-within its subsystem. The abstract role answers "what class of
-responsibility does this module have in the pattern?"; the role-name
-answers "what kind of work, specifically?"
+abstract **slot** in the pattern, and each slot has a small set of
+concrete **role-names** that describe what that specific module does
+within its subsystem. The abstract slot answers "what class of
+responsibility does this module have?"; the role-name answers "what
+kind of work, specifically?"
 
 ### 3.1 The taxonomy
 
@@ -102,10 +101,10 @@ other.
 | **Manager** | **Maintenance** | Privileged public contract — callers declare intent, which is persisted for later dispatch. Used for destructive or serialized work that must not be invocable in-process (Database DDL). |
 | **Manager** | **Interface** | Symmetrical public contract — traffic flows through the manager in both directions. Used when the subsystem mediates both inbound and outbound traffic (IoGateway). |
 | **Executor** | **Execution** | In-process executor that dispatches directly through its provider contract. Paired with Operations and Interface managers. |
-| **Executor** | **Management** | Queue-mediated executor that polls a declaration queue and dispatches through its provider contract on its own cadence. Paired with Maintenance managers. |
+| **Executor** | **Management** | Queue-mediated executor that polls a declaration queue and dispatches on its own cadence. Paired with Maintenance managers. |
 | **Provider** | **Provider** | Mediates an external resource through a protocol-agnostic contract. Used when the work is a direct call to something outside Unity (SQL backends, identity providers, transports). |
-| **Provider** | **Worker** | Performs dispatched work handed to it by its executor. Used when the work is asynchronous relative to the declaration — performed later, possibly by something separable from the dispatcher itself (DDL application). |
-| **Provider** | **Gateway** | Normalizes traffic into or out of the subsystem. Used by the symmetrical boundary where the provider role is neither resource mediation nor dispatched work but bidirectional shape translation (IoGateway's RPC, MCP, API, Discord providers). |
+| **Provider** | **Worker** | Performs dispatched work handed to it by its executor. Used when the work is asynchronous relative to the declaration — a loop that claims and executes queued tasks (DDL application). |
+| **Provider** | **Gateway** | Normalizes traffic into or out of the subsystem. Used by the symmetrical boundary where the provider role is bidirectional shape translation (IoGateway's RPC, MCP, API, Discord providers). |
 
 The Manager role and the Executor role each pair naturally with
 specific role-names on the other slot. Operations managers pair with
@@ -157,13 +156,13 @@ Interface are expected to cover most cases.
 ### 3.4 Executor
 
 The Executor owns the resource handle — the connection pool, the
-HTTP client set, the transport lifecycles, the task queue. It
-selects a concrete provider at startup based on configuration, opens
-the resource, and exposes a provider-agnostic surface to its
-manager. Executors are the single point of coupling between the
-subsystem's provider contract and a concrete implementation; adding
-a new backend means writing a provider subclass and adding a branch
-to the executor's startup selection.
+HTTP client set, the transport lifecycles. It selects a concrete
+provider at startup based on configuration, opens the resource, and
+exposes a provider-agnostic surface to its manager. Executors are
+the single point of coupling between the subsystem's provider
+contract and a concrete implementation; adding a new backend means
+writing a provider subclass and adding a branch to the executor's
+startup selection.
 
 Executor names follow the form `<Subsystem><ExecutorRoleName>Module`:
 `DatabaseExecutionModule`, `AuthExecutionModule`,
@@ -179,36 +178,56 @@ underlying resource. Mechanics in `provider_composition.md`.
 
 ### 3.5 Provider
 
-A Provider is an ABC that isolates protocol-specific, work-specific,
-or shape-specific implementation. Each concrete provider corresponds
-to one external backend, identity source, transport, external
-service, recognized token format, or unit of dispatchable work.
-Providers never leak into application code — they are an
-implementation detail of the executor that hosts them.
+A Provider-slot module is an ABC or concrete class that isolates
+protocol-specific, work-specific, or shape-specific implementation.
+Provider-slot modules live in the subsystem's provider folder
+(`database_execution_providers/`, `auth_execution_providers/`,
+`iogateway_interface_providers/`) — everything in that folder is in
+the Provider slot, regardless of which role-name it takes.
 
 The Provider slot has three role-names because providers answer
 three different kinds of question:
 
 - **Provider** — "how does Unity talk to this external resource?"
-- **Worker** — "how is this unit of dispatched work performed?"
+  A protocol-specific implementation of a resource-mediating
+  contract. `MssqlProvider` implements `DatabaseTransactionProvider`
+  against a live SQL Server connection pool.
+- **Worker** — "how is dispatched work actually performed?" A loop
+  class that claims queued tasks and executes them. Paired with a
+  Management executor; consumes the executor's composed resource
+  provider to do its work. `DatabaseManagementWorker` is the DDL
+  worker.
 - **Gateway** — "how does this transport's native shape map to
-  Unity's normalized envelope, in both directions?"
+  Unity's normalized envelope, in both directions?" Used by the
+  symmetrical boundary. IoGateway's `RpcProvider`, `McpProvider`,
+  etc. occupy this role-name.
 
-A subsystem may use one or more provider role-names. Database uses
-Provider on the Execution axis (`MssqlProvider`) and Worker on the
-Management axis (workers that apply DDL from the task queue). Auth
-uses Provider. IoGateway uses Gateway. Future subsystems may
-introduce new provider role-names if they answer a genuinely new
-kind of question; the existing three are expected to cover most
-cases.
+A subsystem may use one or more provider role-names. The Database
+subsystem uses Provider (`MssqlProvider`, `MssqlManagementProvider`)
+and Worker (`DatabaseManagementWorker`). Auth uses Provider.
+IoGateway uses Gateway. Future subsystems may introduce a new
+provider role-name if they answer a genuinely new kind of question.
 
-Provider naming is **folder-scoped**. Each subsystem has its own
-provider folder (`database_execution_providers/`,
-`auth_execution_providers/`, `iogateway_interface_providers/`), and
-provider class names disambiguate within that folder rather than
-across the whole codebase. Short names are preferred:
-`MssqlProvider`, `GoogleProvider`, `RpcProvider`. Cross-subsystem
-collisions are resolved by import path — a `DiscordProvider` in
+The cross-subsystem `BaseWorker` ABC lives in the kernel's top-level
+`__init__.py` alongside `BaseModule` because every subsystem with a
+Maintenance/Management axis uses it. Concrete worker classes that
+implement `BaseWorker` live in their subsystem's provider folder —
+`DatabaseManagementWorker` lives in `database_execution_providers/`,
+for example. `BaseWorker`'s placement is an artifact of Python
+import mechanics (kernel primitives co-located for every subsystem
+to reach), not a reclassification of workers outside the Provider
+slot. Workers *are* Provider-slot modules; they share a folder with
+their subsystem's other providers. `BaseWorker`'s lifecycle contract
+(`start()`, `stop()`) is covered in `module_lifecycle.md §11`; the
+work contract a worker implements — claim, dispatch, mark
+complete/failed — is supplied by the core-tier Task Orchestration
+substrate (§6).
+
+Provider naming is **folder-scoped**. Provider class names
+disambiguate within their folder rather than across the whole
+codebase. Short names are preferred: `MssqlProvider`,
+`GoogleProvider`, `RpcProvider`. Cross-subsystem collisions are
+resolved by import path — a `DiscordProvider` in
 `auth_execution_providers/` and a `DiscordProvider` in
 `iogateway_interface_providers/` coexist cleanly because they
 represent genuinely different services (identity verification vs.
@@ -216,10 +235,9 @@ transport) under the same vendor.
 
 When a single vendor exposes multiple resources with different
 endpoints, claim shapes, or lifecycle characteristics, each is its
-own provider (`MicrosoftProvider` for consumer MSA,
-`EntraProvider` for tenant identities). The principle is that
-providers are split by the *resource* they address, not by the
-vendor that hosts it.
+own provider (`MicrosoftProvider` for consumer MSA, `EntraProvider`
+for tenant identities). The principle is that providers are split
+by the *resource* they address, not by the vendor that hosts it.
 
 ---
 
@@ -230,9 +248,9 @@ flowchart TB
   App[Application code<br/>modules, RPC handlers, extensions]
   Mgr[Manager<br/><i>Operations · Maintenance · Interface</i>]
   Exec[Executor<br/><i>Execution · Management</i>]
-  Contract[Provider ABC<br/><i>Provider · Worker · Gateway</i>]
-  Impl[Concrete Provider<br/><i>one per backend/work type/transport</i>]
-  Res[(External resource<br/>or work queue)]
+  Contract[Provider slot<br/><i>Provider · Worker · Gateway</i>]
+  Impl[Concrete class<br/><i>one per backend/work-type/transport</i>]
+  Res[(External resource<br/>or task queue)]
 
   App -->|public contract| Mgr
   Mgr -->|dispatch| Exec
@@ -247,10 +265,10 @@ flowchart TB
   class Impl,Res specific
 ```
 
-Everything above the provider contract line is protocol-agnostic.
-Everything at or below the concrete provider is protocol-specific.
-The executor is the chokepoint — it is the only kernel component
-that imports a concrete provider class.
+Everything above the Provider-slot line is protocol-agnostic.
+Everything at or below the concrete class is protocol-specific or
+work-specific. The executor is the chokepoint — it is the only
+kernel component that imports a concrete provider-slot class.
 
 ---
 
@@ -267,14 +285,14 @@ role-name.
 | **Hot-path** | Operations | Execution | in-process, synchronous-feeling | Frequent request/response. One await per hop, no queuing. |
 | **Privileged** | Maintenance | Management | queue-mediated | Callers declare intent by persisting a row. A monitor loop picks it up on its own cadence. Never invocable directly in-process. |
 
-A subsystem has one manager per boundary it exposes. Database has two
-managers because it exposes both a hot-path boundary (operations) and
-a privileged boundary (maintenance). Auth and IoGateway each have one
-boundary.
+A subsystem has one manager per boundary it exposes. Database has
+two managers because it exposes both a hot-path boundary (operations)
+and a privileged boundary (maintenance). Auth and IoGateway each
+have one boundary.
 
 The privileged boundary is the one where the pattern diverges
-meaningfully from the others. Its properties and the reasons for them
-are covered next.
+meaningfully from the others. Its properties and the reasons for
+them are covered next.
 
 ---
 
@@ -287,37 +305,28 @@ after the fact. In-process method dispatch satisfies none of these
 requirements.
 
 The privileged boundary sits between two kernel modules in the same
-subsystem: a **Maintenance manager** and a **Management executor**.
-The handoff is a row in a database table. The Maintenance manager
-writes the row; the Management executor polls the table on its
-configured cadence and dispatches the work through its composed
-provider, which on this axis is a Worker rather than a resource-
-mediating Provider.
+subsystem: a **Maintenance** manager and a **Management** executor.
+The handoff is a persisted declaration — the Maintenance manager
+writes the declaration, and the Management executor picks it up on
+its own cadence and dispatches the work through a Worker-role-name
+provider that consumes the executor's composed resource provider.
 
-The consequences of this shape:
+The kernel owns the *pattern* of this handoff — two modules, a
+persisted boundary between them, a Worker-role-name provider on the
+executor side. It does not own the *substrate* that implements the
+persisted declaration queue, the claim-and-dispatch semantics, the
+status lifecycle, or the retry and cancellation machinery. That
+substrate is a core-tier concern owned by the Task Orchestration
+subsystem.
 
-- **No races.** The Maintenance manager and the Management executor
-  never hold shared in-process state. Concurrent `declare_ddl_task`
-  calls serialize through the table's insert order.
-- **Controlled cadence.** The Management executor runs only as often
-  as its poll interval allows. Nothing in application code can force
-  an immediate DDL application.
-- **Restart safety.** Pending tasks persist across restarts. Running
-  tasks either complete or are re-picked up by the next boot.
-- **Auditability.** Every privileged decision is a row, with status
-  and timestamps, before it runs.
-- **Multi-node safety.** When Unity runs on more than one node, the
-  table is the coordination point. Nodes do not need to negotiate
-  ownership of a task in-memory; the row's status column and the
-  database's own concurrency controls arbitrate.
-
-Queue semantics, task lifecycle, monitor-loop cadence, Worker
-dispatch mechanics, and drainstop coordination are specific to the
-Database subsystem's implementation and are detailed in
-`database_management.md`. The pattern itself — queue-mediated
-handoff to a Worker as the safety model for privileged work —
-generalizes, and is the same shape the core-tier Task Orchestration
-subsystem uses for application-facing workflow state.
+Kernel code declares intent against that substrate (for DDL,
+`DatabaseMaintenanceModule.declare_ddl_task(...)`), and the worker
+in the Management executor consumes the substrate's work contract
+to perform the declared operations. Neither the substrate's table
+shape nor the worker's work contract is specified in the kernel.
+The preservation doc at `docs/future/task_automation_design.md`
+captures the current thinking on that substrate; core-tier
+specification is the eventual home for the locked design.
 
 Security considerations for the privileged boundary are covered in
 `security.md`.
@@ -327,34 +336,28 @@ Security considerations for the privileged boundary are covered in
 ## 7. Database subsystem
 
 The Database subsystem has both a hot-path boundary and a privileged
-boundary. Six modules total, two providers, one shared connection
-pool.
+boundary. Four modules, three provider-slot classes, one shared
+connection pool.
 
-| Axis | Manager | Executor | Provider contract | Concrete |
-|---|---|---|---|---|
-| Operations (hot path) | `DatabaseOperationsModule` | `DatabaseExecutionModule` | `DatabaseTransactionProvider` (Provider role-name) | `MssqlProvider` |
-| Maintenance (privileged) | `DatabaseMaintenanceModule` | `DatabaseManagementModule` | `DatabaseManagementProvider` (Worker role-name) | `MssqlManagementProvider` |
+| Axis | Manager | Executor | Provider-slot classes |
+|---|---|---|---|
+| Operations (hot path) | `DatabaseOperationsModule` | `DatabaseExecutionModule` | `MssqlProvider` (Provider) |
+| Maintenance (privileged) | `DatabaseMaintenanceModule` | `DatabaseManagementModule` | `MssqlManagementProvider` (Provider), `MssqlManagementWorker` (Worker) |
 
-Hot-path dispatch is in-process: caller → `DatabaseOperationsModule`
-→ `DatabaseExecutionModule` → `DatabaseTransactionProvider` →
-`MssqlProvider` → pool. Every hop is one `await`. No queuing.
 
-Privileged dispatch is queue-mediated:
-`DatabaseMaintenanceModule.declare_ddl_task(...)` writes a row to
-`service_tasks_ddl`; `DatabaseManagementModule` runs a monitor loop
-gated by the `TaskDdlPollRate` configuration key that picks up
-pending rows and dispatches through the composed Worker.
 
-The two providers share the connection pool. `DatabaseExecutionModule`
-owns the pool; `DatabaseManagementModule` borrows the live
-`DatabaseTransactionProvider` during its own startup via
-`exec_mod.get_base_provider()` and composes a
-`DatabaseManagementProvider` over it. The mechanics of that
-composition — how the handle is exposed, when it is valid to request,
-and why composition is preferred over inheritance — are in
-`provider_composition.md`, which also carries the two-axis diagram
-showing the shared pool and the task table boundary. Queue semantics,
-Worker dispatch, and task lifecycle are in `database_management.md`.
+The two resource providers share the connection pool.
+`DatabaseExecutionModule` owns the pool; `DatabaseManagementModule`
+borrows the live `DatabaseTransactionProvider` during its own
+startup and composes a `DatabaseManagementProvider` over it. Full
+composition mechanics are in `provider_composition.md`.
+
+The `MssqlManagementWorker` implements the kernel's `BaseWorker`
+contract for its lifecycle; its work contract is supplied by the
+core-tier task orchestration substrate pending implementation.
+There will likley be a `BaseDatabaseManagementWorker` between 
+`BaseWorker` (lifecycle) and `MssqlManagementWorker` (implementation)
+where the additional claim/dispatch contract will be defined.
 
 ---
 
@@ -362,169 +365,38 @@ Worker dispatch, and task lifecycle are in `database_management.md`.
 
 The Auth subsystem has a single hot-path boundary.
 
-| Manager | Executor | Provider contract | Concrete providers |
-|---|---|---|---|
-| `AuthOperationsModule` | `AuthExecutionModule` | `AuthProvider` (Provider role-name) | identity providers + token providers (see below) |
+| Manager | Executor | Provider-slot classes |
+|---|---|---|
+| `AuthOperationsModule` | `AuthExecutionModule` | identity providers and token providers (all Provider role-name) |
 
-`AuthOperationsModule` exposes the public contract for authentication
-and authorization resolution. `AuthExecutionModule` owns the
-registered provider set and any shared HTTP client state.
-
-### 8.1 The three-method contract
-
-The `AuthProvider` ABC defines three primary methods:
-
-- **`resolve_identity`** — Runs the external identity flow. The user
-  is redirected to an identity provider; the provider returns an
-  assertion carrying a subject identifier; this method resolves that
-  subject to an internal identity GUID. Token normalization — lifting
-  the provider-native token into a common shape — happens here as
-  part of identity resolution. Microsoft's hybrid AD token is the
-  superset model; the normalized shape is derived from it.
-
-- **`resolve_authorization`** — Given an internal identity, resolves
-  the roles, entitlements, and scopes that identity carries at this
-  moment. The output is the security context consumed by RPC's
-  authorization layer. Called on every request after initial
-  authentication, not just at login.
-
-- **`resolve_token`** — Decodes a pre-existing token back to an
-  internal identity without going through a fresh external handshake.
-  Handles bearer tokens (React client sessions), MCP dynamic-client-
-  registration tokens, and static long-lived API tokens. The provider
-  figures out which token format it's looking at and resolves.
-
-All three methods default to returning **unauthorized**. A provider
-that doesn't implement a given method returns unauthorized from it.
-The subsystem as a whole returns unauthorized when no provider
-matches, when no hook is registered for identity creation, or when
-any step in the resolution chain declines. Unauthorized is the safe
-default and the shipping default.
-
-### 8.2 Provider sub-families
-
-Concrete providers fall into two functional shapes under the single
-`AuthProvider` ABC:
-
-**Identity providers** run external OAuth/OIDC flows against
-third-party identity sources. They implement `resolve_identity`
-meaningfully; `resolve_token` typically returns unauthorized
-(identity providers don't decode Unity-issued tokens).
-
-- `GoogleProvider`
-- `MicrosoftProvider` (consumer MSA)
-- `EntraProvider` (Microsoft tenant identities)
-- `DiscordProvider`
-- `AppleProvider` (future)
-- `MetaProvider` (future)
-
-**Token providers** decode Unity-recognized token formats back to
-internal identities. They implement `resolve_token` meaningfully;
-`resolve_identity` typically returns unauthorized (token providers
-don't run external flows).
-
-- `BearerProvider` — React client sessions and other issued bearer
-  tokens.
-- `McpDcrProvider` — MCP dynamic client registration tokens.
-- `StaticApiProvider` — administratively issued long-lived API
-  tokens.
-
-Both sub-families implement `resolve_authorization` against the same
-internal authorization store.
-
-### 8.3 Per-provider configuration
-
-Each provider has a custom table holding its protocol-specific
-configuration: authorization and token endpoints, redirect URI,
-scope set, client credentials reference, and provider-specific
-fields. The table schema varies per provider because the
-configuration surface varies per provider — collapsing them into a
-single generic table would force a lowest-common-denominator shape
-that discards load-bearing detail.
-
-Identity records are keyed by the provider's subject identifier as
-the natural key, not by a Unity-generated UUID. UUIDs are for
-internal entities; external identity correlation uses the identifier
-the provider itself issued.
-
-### 8.4 Hook surface for identity creation
-
-The Auth subsystem is designed to run without a user module. In a
-kernel-only deployment, `resolve_identity` correctly returns
-unauthorized for every external subject — there is no internal
-identity store to resolve against, no user records to match, and
-nothing downstream that would consume an authenticated identity.
-
-`resolve_identity` exposes a **hook surface** that a core-tier user
-module registers against. When a provider resolves a valid external
-assertion whose subject has no existing internal identity, the hook
-is invoked; if a hook is registered, it may create the identity and
-return its GUID. If no hook is registered, the default behavior
-holds: unauthorized. This is the mechanism by which the core-tier
-Users module participates in Auth without Auth importing Users.
-
-Hook signatures, registration mechanics, and the corresponding
-hook on `resolve_token` for stale-token cases are specified in
-`auth.md`.
-
-Full contract, table layouts, and flow details are in `auth.md`.
+The provider contract defines a three-method surface for identity
+resolution, authorization resolution, and token decoding; providers
+default to returning unauthorized for methods they don't meaningfully
+implement. A hook surface lets a core-tier Users module participate
+in identity creation without Auth importing Users. Full contract,
+provider inventory, per-provider configuration schemas, hook
+signatures, and flow details are in `auth.md`.
 
 ---
 
 ## 9. IoGateway subsystem
 
-The IoGateway subsystem has a single symmetrical boundary. This is
-the only subsystem in the kernel where traffic flows through the
-manager in both directions — inbound requests normalize into a
-common envelope, and outbound calls denormalize into each external
-service's native shape. The manager is named `IoGatewayInterfaceModule`
-to reflect that symmetry.
+The IoGateway subsystem has a single symmetrical boundary — the only
+kernel subsystem where traffic flows through the manager in both
+directions.
 
-| Manager | Executor | Provider contract | Concrete providers |
-|---|---|---|---|
-| `IoGatewayInterfaceModule` | `IoGatewayExecutionModule` | `IoGatewayProvider` (Gateway role-name) | `RpcProvider`, `McpProvider`, `ApiProvider`, `DiscordProvider`, plus outbound service providers |
+| Manager | Executor | Provider-slot classes |
+|---|---|---|
+| `IoGatewayInterfaceModule` | `IoGatewayExecutionModule` | inbound transport and outbound service providers (all Gateway role-name) |
 
-`IoGatewayInterfaceModule` is the first-class single entry point for
-all traffic crossing the Unity boundary. `IoGatewayExecutionModule`
-owns the per-provider lifecycles. Concrete providers come in two
-shapes:
-
-**Inbound transport providers** accept traffic initiated outside
-Unity, normalize it into a common envelope, and hand off to RPC. RPC
-remains the security contract enforcement layer — IoGateway
-normalizes; RPC authorizes and dispatches.
-
-- `RpcProvider` — HTTP traffic, including the React client.
-- `McpProvider` — Model Context Protocol.
-- `ApiProvider` — programmable API clients.
-- `DiscordProvider` — Discord bot traffic.
-
-**Outbound service providers** initiate calls from Unity to external
-APIs and return their responses through the same normalization
-surface. These are shaped differently from inbound transports —
-there is no accept loop, the call is request/response with the
-direction inverted, and the concerns that dominate are credential
-handling, rate limits, retry semantics, and (for long-running
-operations) asynchronous result polling. They sit in the same
-subsystem because they share the envelope contract and the
-single-entry-point discipline: nothing in application code calls an
-external API directly, everything goes through the gateway.
-
-Long-running outbound calls — where the initial call returns a job
-handle and the result arrives later — are coordinated by the
-core-tier Task Orchestration subsystem, which owns workflow state,
-polling cadence, and fan-out to downstream destinations. See
-`core_architecture.md`.
-
-This is a significant shift from the legacy system, where
-transport-specific assumptions leaked into RPC handlers and
-authorization logic leaked into transport code. In Unity, every
-transport and every external service is a peer under one contract,
-and the RPC layer sees a single normalized shape regardless of
-origin or direction.
-
-Full envelope shape, transport-specific mappings, outbound-provider
-semantics, and the RPC handoff contract are in `iogateway.md`.
+Inbound traffic normalizes through a Gateway provider into a common
+envelope and hands off to RPC for authorization and dispatch.
+Outbound calls denormalize through the same provider surface into
+each external service's native shape. Long-running outbound
+operations coordinate with the core-tier Task Orchestration
+subsystem for result polling. Full envelope shape, transport-specific
+mappings, outbound-provider semantics, and the RPC handoff contract
+are in `iogateway.md`.
 
 ---
 
@@ -539,8 +411,8 @@ A new kernel subsystem is warranted when all three of these hold:
 1. It mediates a category of external boundary that none of
    Database, Auth, or IoGateway covers. Blob storage, for example,
    is *not* such a category — it is handled in core because its
-   integration with application data is tight enough to pull it above
-   the kernel tier.
+   integration with application data is tight enough to pull it
+   above the kernel tier.
 2. The boundary has protocol variation that benefits from an ABC —
    multiple backends or services under one contract.
 3. The subsystem must sit below core in the dependency order. If a
@@ -559,26 +431,3 @@ A new kernel subsystem is **not** warranted when:
   new provider in the Database subsystem, not a new subsystem).
 
 ---
-
-## 11. What this pattern doesn't cover
-
-Not every kernel module is part of a subsystem. The Manager/Executor/
-Provider pattern applies where protocol variation and resource
-ownership warrant it; elsewhere, simpler shapes are correct.
-
-- **Pure cache modules** — `SystemConfigurationModule`,
-  `ServiceEnumModule`. These load a table at startup and expose a
-  synchronous lookup API. No external resource, no provider layer,
-  no executor. They are kernel modules that happen to use the
-  Database subsystem's Operations manager during their own startup.
-- **Pure lookup/dispatch modules** — these route calls based on
-  registered data but do not own an external resource. They may
-  consume subsystem managers but do not themselves follow the M/E/P
-  pattern.
-- **The environment module** — `EnvironmentVariablesModule`. Reads a
-  file once at startup. No subsystem shape is appropriate or needed.
-
-These modules participate fully in the module lifecycle (startup,
-seal, drain, shutdown) without participating in the subsystem
-pattern. The pattern is applied where it earns its cost, not
-universally.
