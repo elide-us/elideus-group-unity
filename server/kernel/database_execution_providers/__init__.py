@@ -2,8 +2,9 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from server.kernel import BaseWorker
 
+logger = logging.getLogger(__name__.split('.')[-1])
 
 # ----------------------------------------------------------------------------
 # DatabaseTransactionProvider
@@ -104,4 +105,24 @@ class DatabaseManagementProvider(ABC):
 
   @abstractmethod
   def supports_native_vector(self) -> bool:
+    pass
+
+
+# ----------------------------------------------------------------------------
+# DatabaseManagementWorker
+# ----------------------------------------------------------------------------
+# Subsystem-level ABC extending BaseWorker. Today it carries only the
+# lifecycle contract it inherits and serves as the placeholder the Management
+# executor instantiates. When the core-tier task orchestration substrate
+# lands, this class gains the claim/dispatch contract, and a concrete
+# MssqlManagementWorker is written to satisfy it.
+#
+# See docs/future/task_automation_design.md for substrate design thinking.
+# ----------------------------------------------------------------------------
+
+class DatabaseManagementWorker(BaseWorker):
+  async def start(self) -> None:
+    pass
+
+  async def stop(self) -> None:
     pass
