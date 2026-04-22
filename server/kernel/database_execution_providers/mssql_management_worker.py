@@ -1,9 +1,13 @@
 import logging
 
-from typing import Any
-
 from . import BaseDatabaseManagementWorker
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
-# class MssqlManagementWorker(BaseDatabaseManagementWorker):
+
+class MssqlManagementWorker(BaseDatabaseManagementWorker):
+  async def start(self) -> None:
+    pass
+
+  async def stop(self) -> None:
+    pass
