@@ -33,6 +33,16 @@ class BaseWorker(ABC):
     pass
 
 
+
+class BaseProvider(ABC):
+  @abstractmethod
+  async def connect(self):
+    pass
+
+  @abstractmethod
+  async def disconnect(self):
+    pass
+
 # ----------------------------------------------------------------------------
 # BaseModule
 # ----------------------------------------------------------------------------

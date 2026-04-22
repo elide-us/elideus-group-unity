@@ -2,12 +2,12 @@ import logging
 
 from typing import Any
 
-from . import BaseDatabaseTransactionProvider, BaseDatabaseManagementProvider
+from . import BaseDatabaseTransactionProvider, ComposedDatabaseManagementProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class MssqlManagementProvider(BaseDatabaseManagementProvider):
+class MssqlManagementProvider(ComposedDatabaseManagementProvider):
   def __init__(self, provider: BaseDatabaseTransactionProvider):
     super().__init__(provider)
 

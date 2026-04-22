@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-from server.kernel import BaseWorker
+from server.kernel import BaseWorker, BaseProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # rowcount with -1 as the failure sentinel.
 # ----------------------------------------------------------------------------
 
-class BaseDatabaseTransactionProvider(ABC):
+class BaseDatabaseTransactionProvider(BaseProvider):
   def __init__(self, dsn: str):
     self._dsn = dsn
 
@@ -37,7 +37,7 @@ class BaseDatabaseTransactionProvider(ABC):
 
 
 # ----------------------------------------------------------------------------
-# BaseDatabaseManagementProvider
+# ComposedDatabaseManagementProvider
 # ----------------------------------------------------------------------------
 # Composed provider contract. Borrows the primary provider's handle via
 # DatabaseExecutionModule.get_base_provider(); does not own the connection
@@ -53,7 +53,7 @@ class BaseDatabaseTransactionProvider(ABC):
 # a DDL is emitted.
 # ----------------------------------------------------------------------------
 
-class BaseDatabaseManagementProvider(ABC):
+class ComposedDatabaseManagementProvider(ABC):
   def __init__(self, provider: BaseDatabaseTransactionProvider):
     self._provider = provider
 
