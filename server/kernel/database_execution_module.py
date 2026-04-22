@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from . import BaseModule
 from .environment_variables_module import EnvironmentVariablesModule
-from .database_execution_providers import DatabaseTransactionProvider
+from .database_execution_providers import BaseDatabaseTransactionProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #
 # Selects one concrete database provider at startup based on the SQL_PROVIDER
 # environment variable, opens its connection pool, and exposes two methods —
-# `query` and `execute` — that route through the `DatabaseTransactionProvider`
+# `query` and `execute` — that route through the `BaseDatabaseTransactionProvider`
 # contract. Callers above this layer never import or reference a provider
 # class directly; the provider is an implementation detail of this module.
 #
 # This module is the single point of coupling between the provider contract
 # and a concrete implementation. Adding a new database backend means: write
-# a `DatabaseTransactionProvider` subclass, add a branch to the match in `startup()`.
+# a `BaseDatabaseTransactionProvider` subclass, add a branch to the match in `startup()`.
 #
 # -- Contract ----------------------------------------------------------------
 #   query(sql, params)   -> parsed JSON (dict | list) | None
@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   sequenceDiagram
 #     participant Ops as DatabaseOperationsModule
 #     participant Exec as DatabaseExecutionModule
-#     participant Prov as DatabaseTransactionProvider
-#     participant Impl as MssqlProvider
+#     participant Prov as BaseDatabaseTransactionProvider
+#     participant Impl as MssqlTransactionProvider
 #
 #     Ops->>Exec: query(sql, params)
 #     Exec->>Prov: query(sql, params)
@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 class DatabaseExecutionModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
-    self._provider: DatabaseTransactionProvider | None = None
+    self._provider: BaseDatabaseTransactionProvider | None = None
 
   async def on_seal(self):
     pass
@@ -83,28 +83,28 @@ class DatabaseExecutionModule(BaseModule):
       return
 
     if provider_name == "AZURE_SQL_CONNECTION_STRING":
-      from .database_execution_providers.mssql_transaction_provider import MssqlProvider
+      from .database_execution_providers.mssql_transaction_provider import MssqlTransactionProvider
       dsn = env.get(provider_name)
       if dsn is None:
         logger.error("Provider '%s' not available", provider_name)
         return
-      self._provider = MssqlProvider(dsn)
+      self._provider = MssqlTransactionProvider(dsn)
 
     # elif provider_name == "POSTGRESQL_CONNECTION_STRING":
-    #   from .database_execution_providers.postgres_provider import PostgresProvider
+    #   from .database_execution_providers.postgres_transaction_provider import PostgresTransactionProvider
     #   dsn = env.get(provider_name)
     #   if dsn is None:
     #     logging.error("DatabaseConnectionModule: %s not available", provider_name)
     #     return
-    #   self._provider = PostgresProvider(dsn)
+    #   self._provider = PostgresTransactionProvider(dsn)
 
     # elif provider_name == "MYSQL_CONNECTION_STRING":
-    #   from .database_execution_providers.mysql_provider import MysqlProvider
+    #   from .database_execution_providers.mysql_transaction_provider import MysqlTransactionProvider
     #   dsn = env.get(provider_name)
     #   if dsn is None:
     #     logging.error("DatabaseConnectionModule: %s not available", provider_name)
     #     return
-    #   self._provider = MysqlProvider(dsn)
+    #   self._provider = MysqlTransactionProvider(dsn)
 
     else:
       logger.error("Unknown provider '%s'", provider_name)
@@ -130,9 +130,8 @@ class DatabaseExecutionModule(BaseModule):
       return -1
     return await self._provider.execute(query, params)
   
-  def get_base_provider(self) -> DatabaseTransactionProvider | None:
+  def get_base_provider(self) -> BaseDatabaseTransactionProvider | None:
     if self._provider is None:
       logger.error("No active provider")
       return None
     return self._provider
-  
