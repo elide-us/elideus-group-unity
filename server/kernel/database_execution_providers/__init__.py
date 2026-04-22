@@ -2,11 +2,12 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from server.kernel import BaseWorker, BaseProvider
 
+logger = logging.getLogger(__name__.split('.')[-1])
 
 # ----------------------------------------------------------------------------
-# DatabaseTransactionProvider
+# BaseDatabaseTransactionProvider
 # ----------------------------------------------------------------------------
 # Primary provider contract. Owns the connection pool for the lifetime of
 # DatabaseExecutionModule. One concrete implementation per SQL engine.
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 # rowcount with -1 as the failure sentinel.
 # ----------------------------------------------------------------------------
 
-class DatabaseTransactionProvider(ABC):
+class BaseDatabaseTransactionProvider(BaseProvider):
   def __init__(self, dsn: str):
     self._dsn = dsn
 
@@ -36,7 +37,7 @@ class DatabaseTransactionProvider(ABC):
 
 
 # ----------------------------------------------------------------------------
-# DatabaseManagementProvider
+# ComposedDatabaseManagementProvider
 # ----------------------------------------------------------------------------
 # Composed provider contract. Borrows the primary provider's handle via
 # DatabaseExecutionModule.get_base_provider(); does not own the connection
@@ -52,8 +53,8 @@ class DatabaseTransactionProvider(ABC):
 # a DDL is emitted.
 # ----------------------------------------------------------------------------
 
-class DatabaseManagementProvider(ABC):
-  def __init__(self, provider: DatabaseTransactionProvider):
+class ComposedDatabaseManagementProvider(ABC):
+  def __init__(self, provider: BaseDatabaseTransactionProvider):
     self._provider = provider
 
   # -- Schema introspection --------------------------------------------------
@@ -104,4 +105,24 @@ class DatabaseManagementProvider(ABC):
 
   @abstractmethod
   def supports_native_vector(self) -> bool:
+    pass
+
+
+# ----------------------------------------------------------------------------
+# BaseDatabaseManagementWorker
+# ----------------------------------------------------------------------------
+# Subsystem-level ABC extending BaseWorker. Today it carries only the
+# lifecycle contract it inherits and serves as the placeholder the Management
+# executor instantiates. When the core-tier task orchestration substrate
+# lands, this class gains the claim/dispatch contract, and a concrete
+# MssqlManagementWorker is written to satisfy it.
+#
+# See docs/future/task_automation_design.md for substrate design thinking.
+# ----------------------------------------------------------------------------
+
+class BaseDatabaseManagementWorker(BaseWorker):
+  async def start(self) -> None:
+    pass
+
+  async def stop(self) -> None:
     pass

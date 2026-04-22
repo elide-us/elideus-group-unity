@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__.split('.')[-1])
 @asynccontextmanager
 async def lifespan(app: FastAPI):
   modules = ModuleManager(app)
-  await modules.startup()
-
   try:
+    await modules.startup()
+
     # mcp_module = app.state.mcp_io_service
     # if mcp_module and mcp_module.session_manager:
     #   async with mcp_module.session_manager.run():
@@ -20,5 +20,6 @@ async def lifespan(app: FastAPI):
     # else:
     #   yield
     yield
-  except Exception:
-    logging.exception("lifespan failed to yield")
+  finally:
+    await modules.shutdown()
+  

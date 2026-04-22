@@ -1,11 +1,11 @@
 import logging, aioodbc, json
 from typing import Any
 
-from . import DatabaseTransactionProvider
+from . import BaseDatabaseTransactionProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
-class MssqlProvider(DatabaseTransactionProvider):
+class MssqlTransactionProvider(BaseDatabaseTransactionProvider):
   async def connect(self):
     self.pool = await aioodbc.create_pool(dsn=self._dsn, minsize=1, maxsize=5)
     logger.info("Connection pool created")
