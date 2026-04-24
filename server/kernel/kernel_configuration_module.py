@@ -8,7 +8,7 @@ from .database_execution_module import DatabaseExecutionModule
 logger = logging.getLogger(__name__.split('.')[-1])
 
 # ----------------------------------------------------------------------------
-# SystemConfigurationModule
+# KernelConfigurationModule
 # ----------------------------------------------------------------------------
 # Key/value configuration lookup backed by `system_configuration`.
 #
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #
 # ----------------------------------------------------------------------------
 
-class SystemConfigurationModule(BaseModule):
+class KernelConfigurationModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
     self._cache: dict[str, str | None] = {}

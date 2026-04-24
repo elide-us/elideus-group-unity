@@ -8,7 +8,7 @@ from .database_execution_module import DatabaseExecutionModule
 logger = logging.getLogger(__name__.split('.')[-1])
 
 # ----------------------------------------------------------------------------
-# ServiceEnumModule
+# KernelEnumModule
 # ----------------------------------------------------------------------------
 # Enumeration lookup backed by `service_enums`.
 #
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #
 # ----------------------------------------------------------------------------
 
-class ServiceEnumModule(BaseModule):
+class KernelEnumModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
     self._cache: dict[tuple[str, str], int] = {}
