@@ -1,6 +1,15 @@
 # The Contract Layer
 
-## What the application is
+**Product:** TheOracleRPC
+**Codename:** Unity
+
+**Spec document — `docs/CONTRACTS.md`**
+**Status:** authoritative definition of the application as a type graph,
+and of the contract layer as a runtime security boundary.
+
+---
+
+## 1. What the application is
 
 This application is a type graph.
 
@@ -21,7 +30,9 @@ the source of truth; the code is downstream.
 
 This is not a documentation style. This is the architecture.
 
-## This layer is a security boundary
+---
+
+## 2. This layer is a security boundary
 
 The contract tables are not a dictionary. They are not documentation. They are
 not a generated artifact that describes the runtime.
@@ -56,7 +67,9 @@ The contract layer is therefore load-bearing in the strongest possible sense.
 Violations are not style issues or documentation lapses. They are
 vulnerabilities, bugs, or both.
 
-## The rule
+---
+
+## 3. The rule
 
 Before proposing any function, model, data shape, or inter-module interaction:
 
@@ -78,7 +91,9 @@ that runs in the reverse order.
 This rule is not a workflow recommendation. It is the invariant the runtime
 depends on to stay secure.
 
-## How to query it
+---
+
+## 4. How to query it
 
 The contract layer is accessible via MCP. To retrieve the signature of any
 named function:
@@ -98,7 +113,9 @@ implementation is incorrect. When the query result does not match the
 desired behavior, the contract is incomplete and must be updated before
 the implementation is modified. In both cases, the tables are authoritative.
 
-## Why this exists
+---
+
+## 5. Why this exists
 
 The application was previously expressed primarily in code, with prose
 documentation orbiting it. This failed reproducibly: across rewrites, the
@@ -127,7 +144,9 @@ surface; the implementation is a materialization target. This is the property
 that keeps the architecture portable across the decades the system is
 intended to operate.
 
-## What lives elsewhere
+---
+
+## 6. What lives elsewhere
 
 The contract layer defines *what data flows through the application*. It
 does not define:
@@ -144,7 +163,9 @@ does not define:
 All of these layers reference the contract layer for the data shapes they
 operate on, but they are not the contract layer.
 
-## The naming cluster
+---
+
+## 7. The naming cluster
 
 Current and planned tables under the `contracts_*` prefix:
 
