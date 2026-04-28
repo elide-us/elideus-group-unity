@@ -9,6 +9,7 @@ GO
 -- =====================================================================
 CREATE TABLE [dbo].[contracts_primitives_types] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(64) NOT NULL,
   [pub_mssql_type] NVARCHAR(128) NOT NULL,
   [pub_postgresql_type] NVARCHAR(128) NULL,
@@ -58,6 +59,7 @@ CREATE TABLE [dbo].[contracts_db_columns] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_table_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_type_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(128) NOT NULL,
   [pub_ordinal] INT NOT NULL,
   [pub_is_nullable] BIT DEFAULT (0) NOT NULL,
@@ -71,6 +73,7 @@ CREATE TABLE [dbo].[contracts_db_constraint_columns] (
   [ref_constraint_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_column_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_referenced_column_guid] UNIQUEIDENTIFIER NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_ordinal] INT NOT NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
@@ -80,6 +83,7 @@ CREATE TABLE [dbo].[contracts_db_constraints] (
   [ref_table_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_kind_enum_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_referenced_table_guid] UNIQUEIDENTIFIER NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(256) NOT NULL,
   [pub_expression] NVARCHAR(MAX) NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
@@ -89,6 +93,7 @@ CREATE TABLE [dbo].[contracts_db_index_columns] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_index_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_column_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_ordinal] INT NOT NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
@@ -96,6 +101,7 @@ CREATE TABLE [dbo].[contracts_db_index_columns] (
 CREATE TABLE [dbo].[contracts_db_indexes] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_table_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(256) NOT NULL,
   [pub_is_unique] BIT DEFAULT (0) NOT NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
@@ -103,6 +109,7 @@ CREATE TABLE [dbo].[contracts_db_indexes] (
 );
 CREATE TABLE [dbo].[contracts_db_operations] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_op] NVARCHAR(128) NOT NULL,
   [pub_query_mssql] NVARCHAR(MAX) NULL,
   [pub_query_postgres] NVARCHAR(MAX) NULL,
@@ -114,6 +121,7 @@ CREATE TABLE [dbo].[contracts_db_operations] (
 );
 CREATE TABLE [dbo].[contracts_db_tables] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(128) NOT NULL,
   [pub_schema] NVARCHAR(64) DEFAULT ('dbo') NOT NULL,
   [pub_alias] NVARCHAR(128) NOT NULL,
@@ -122,6 +130,7 @@ CREATE TABLE [dbo].[contracts_db_tables] (
 );
 CREATE TABLE [dbo].[contracts_primitives_enums] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_enum_type] NVARCHAR(128) NOT NULL,
   [pub_name] NVARCHAR(128) NOT NULL,
   [pub_value] TINYINT NOT NULL,
@@ -141,6 +150,7 @@ CREATE TABLE [dbo].[service_modules_manifest] (
 );
 CREATE TABLE [dbo].[service_system_configuration] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_key] NVARCHAR(256) NOT NULL,
   [pub_value] NVARCHAR(MAX) NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
@@ -194,12 +204,22 @@ ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [UQ_sc_key] UNIQ
 -- Constraints (FOREIGN KEY)
 ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_column] FOREIGN KEY ([ref_column_guid]) REFERENCES [dbo].[contracts_db_columns] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_index] FOREIGN KEY ([ref_index_guid]) REFERENCES [dbo].[contracts_db_indexes] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_column] FOREIGN KEY ([ref_column_guid]) REFERENCES [dbo].[contracts_db_columns] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_constraint] FOREIGN KEY ([ref_constraint_guid]) REFERENCES [dbo].[contracts_db_constraints] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_ref_column] FOREIGN KEY ([ref_referenced_column_guid]) REFERENCES [dbo].[contracts_db_columns] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_kind] FOREIGN KEY ([ref_kind_enum_guid]) REFERENCES [dbo].[contracts_primitives_enums] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_ref_table] FOREIGN KEY ([ref_referenced_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_type] FOREIGN KEY ([ref_type_guid]) REFERENCES [dbo].[contracts_primitives_types] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [FK_cdi_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [FK_cdi_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_tables] ADD CONSTRAINT [FK_cdt_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [FK_cdo_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_primitives_types] ADD CONSTRAINT [FK_cpt_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [FK_cpe_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [FK_ssc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);

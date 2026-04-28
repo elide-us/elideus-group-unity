@@ -117,11 +117,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "051097F4-742D-541A-B095-D63C8197FD79",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "9D1F216C-D771-5E26-ABC7-B66B8A5ED817",
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_name",
-        "pub_ordinal": 2,
+        "pub_ordinal": 3,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 64
@@ -134,7 +147,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_mssql_type",
-        "pub_ordinal": 3,
+        "pub_ordinal": 4,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -147,7 +160,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_postgresql_type",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -160,7 +173,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_mysql_type",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -173,7 +186,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_python_type",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 64
@@ -186,7 +199,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_typescript_type",
-        "pub_ordinal": 7,
+        "pub_ordinal": 8,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 64
@@ -199,7 +212,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_json_type",
-        "pub_ordinal": 8,
+        "pub_ordinal": 9,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 64
@@ -212,7 +225,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "18667606-C633-5A82-9A3B-2CD27916FC95",
         "pub_name": "pub_odbc_type_code",
-        "pub_ordinal": 9,
+        "pub_ordinal": 10,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": null
@@ -225,7 +238,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
         "pub_name": "pub_default_length",
-        "pub_ordinal": 10,
+        "pub_ordinal": 11,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": null
@@ -238,7 +251,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_notes",
-        "pub_ordinal": 11,
+        "pub_ordinal": 12,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": 512
@@ -251,7 +264,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 12,
+        "pub_ordinal": 13,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -264,7 +277,7 @@
         "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 13,
+        "pub_ordinal": 14,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -286,11 +299,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "786A88F1-2E1C-5AFC-A495-CEC0911A618D",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "DED0E736-35E9-597D-9C37-718BF74828C2",
         "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_enum_type",
-        "pub_ordinal": 2,
+        "pub_ordinal": 3,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -303,7 +329,7 @@
         "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_name",
-        "pub_ordinal": 3,
+        "pub_ordinal": 4,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -316,7 +342,7 @@
         "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
         "ref_type_guid": "0D331097-4AB4-5AA2-A481-07AB66A29BBD",
         "pub_name": "pub_value",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": null
@@ -329,7 +355,7 @@
         "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_notes",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": 512
@@ -342,7 +368,7 @@
         "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -355,7 +381,7 @@
         "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 7,
+        "pub_ordinal": 8,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -377,11 +403,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "61653298-214B-5A19-9545-9228D6169390",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "FD3134ED-70A0-52B9-820F-BAD83F49D5A1",
         "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_name",
-        "pub_ordinal": 2,
+        "pub_ordinal": 3,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -394,7 +433,7 @@
         "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_schema",
-        "pub_ordinal": 3,
+        "pub_ordinal": 4,
         "pub_is_nullable": 0,
         "pub_default_value": "'dbo'",
         "pub_max_length": 64
@@ -407,7 +446,7 @@
         "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_alias",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -420,7 +459,7 @@
         "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -433,7 +472,7 @@
         "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -481,11 +520,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "370229B0-654E-5815-815C-1BBA78AF63E7",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "14442C2A-C212-500F-B74D-0C3A863C748D",
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_name",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -498,7 +550,7 @@
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
         "pub_name": "pub_ordinal",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": null
@@ -511,7 +563,7 @@
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_type_guid": "72AD4685-D3E2-5A3F-941E-4EA9B0D3F9CC",
         "pub_name": "pub_is_nullable",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": "0",
         "pub_max_length": null
@@ -524,7 +576,7 @@
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_default_value",
-        "pub_ordinal": 7,
+        "pub_ordinal": 8,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": 512
@@ -537,7 +589,7 @@
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
         "pub_name": "pub_max_length",
-        "pub_ordinal": 8,
+        "pub_ordinal": 9,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": null
@@ -550,7 +602,7 @@
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 9,
+        "pub_ordinal": 10,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -563,7 +615,7 @@
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 10,
+        "pub_ordinal": 11,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -598,11 +650,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "B4379B22-058C-5C00-8895-EFDA31A34E41",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "24C89908-0591-570B-8306-F8FD88460EA9",
         "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_name",
-        "pub_ordinal": 3,
+        "pub_ordinal": 4,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 256
@@ -615,7 +680,7 @@
         "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
         "ref_type_guid": "72AD4685-D3E2-5A3F-941E-4EA9B0D3F9CC",
         "pub_name": "pub_is_unique",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 0,
         "pub_default_value": "0",
         "pub_max_length": null
@@ -628,7 +693,7 @@
         "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -641,7 +706,7 @@
         "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -689,11 +754,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "D04892A7-11AB-595C-96E4-7AE9BCA53FDA",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "44A145BC-7F02-57D6-BB09-C4DB268C4752",
         "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
         "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
         "pub_name": "pub_ordinal",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": null
@@ -706,7 +784,7 @@
         "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -719,7 +797,7 @@
         "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -780,11 +858,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "1A2CE401-B96C-5F93-9EAD-F5B5415C1864",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "857EE71B-7030-5AF4-ABE0-107545F2ABC5",
         "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_name",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 256
@@ -797,7 +888,7 @@
         "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
         "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
         "pub_name": "pub_expression",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": null
@@ -810,7 +901,7 @@
         "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 7,
+        "pub_ordinal": 8,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -823,7 +914,7 @@
         "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 8,
+        "pub_ordinal": 9,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -884,11 +975,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "FF4EF298-9341-57BE-B72A-C2F203BE3641",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "BCB4987D-418E-5EFE-A773-C03BBC94878B",
         "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
         "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
         "pub_name": "pub_ordinal",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": null
@@ -901,7 +1005,7 @@
         "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -914,7 +1018,7 @@
         "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 7,
+        "pub_ordinal": 8,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -936,11 +1040,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "EBC5ED7C-5E99-5560-BB6F-B6A7A76C18EF",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "C5C3E206-FE39-5B56-8397-987ECB1E9764",
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_op",
-        "pub_ordinal": 2,
+        "pub_ordinal": 3,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 128
@@ -953,7 +1070,7 @@
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
         "pub_name": "pub_query_mssql",
-        "pub_ordinal": 3,
+        "pub_ordinal": 4,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": null
@@ -966,7 +1083,7 @@
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
         "pub_name": "pub_query_postgres",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": null
@@ -979,7 +1096,7 @@
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
         "pub_name": "pub_query_mysql",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": null
@@ -992,7 +1109,7 @@
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "72AD4685-D3E2-5A3F-941E-4EA9B0D3F9CC",
         "pub_name": "pub_bootstrap",
-        "pub_ordinal": 6,
+        "pub_ordinal": 7,
         "pub_is_nullable": 0,
         "pub_default_value": "0",
         "pub_max_length": null
@@ -1005,7 +1122,7 @@
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_notes",
-        "pub_ordinal": 7,
+        "pub_ordinal": 8,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": 512
@@ -1018,7 +1135,7 @@
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 8,
+        "pub_ordinal": 9,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -1031,7 +1148,7 @@
         "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 9,
+        "pub_ordinal": 10,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -1157,11 +1274,24 @@
     {
       "table": "contracts_db_columns",
       "data": {
+        "key_guid": "878BEB58-3292-51FC-BC62-B9793B81FB52",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_package_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
         "key_guid": "24002AA6-E494-566B-904D-83D69658205B",
         "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
         "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
         "pub_name": "pub_key",
-        "pub_ordinal": 2,
+        "pub_ordinal": 3,
         "pub_is_nullable": 0,
         "pub_default_value": null,
         "pub_max_length": 256
@@ -1174,7 +1304,7 @@
         "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
         "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
         "pub_name": "pub_value",
-        "pub_ordinal": 3,
+        "pub_ordinal": 4,
         "pub_is_nullable": 1,
         "pub_default_value": null,
         "pub_max_length": null
@@ -1187,7 +1317,7 @@
         "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_created_on",
-        "pub_ordinal": 4,
+        "pub_ordinal": 5,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -1200,7 +1330,7 @@
         "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
         "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
         "pub_name": "priv_modified_on",
-        "pub_ordinal": 5,
+        "pub_ordinal": 6,
         "pub_is_nullable": 0,
         "pub_default_value": "SYSDATETIMEOFFSET()",
         "pub_max_length": null
@@ -1357,6 +1487,17 @@
     {
       "table": "contracts_db_constraints",
       "data": {
+        "key_guid": "7135D03A-55AC-546B-8BA4-2543E0440322",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cpt_package",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
         "key_guid": "1F0342A5-DC41-5072-B291-4033F3519F3B",
         "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
         "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
@@ -1384,6 +1525,17 @@
         "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
         "ref_referenced_table_guid": null,
         "pub_name": "UQ_cpe_type_value",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "45ECBA8D-79B1-59B4-8CDC-FB542C0EBC89",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cpe_package",
         "pub_expression": null
       }
     },
@@ -1423,6 +1575,17 @@
     {
       "table": "contracts_db_constraints",
       "data": {
+        "key_guid": "BBCE7E3B-323B-5050-BD2F-CAE060708C86",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cdt_package",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
         "key_guid": "A8081EBE-FA07-5CF3-88FB-2ED73049A67D",
         "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
@@ -1450,6 +1613,17 @@
         "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
         "ref_referenced_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
         "pub_name": "FK_cdc_type",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "32940E00-1D6E-5B3E-B77F-D6DC61565F22",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cdc_package",
         "pub_expression": null
       }
     },
@@ -1500,6 +1674,17 @@
     {
       "table": "contracts_db_constraints",
       "data": {
+        "key_guid": "A22E8687-5DD7-5157-BBF1-46DF9A76F9B3",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cdi_package",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
         "key_guid": "71723D9A-3C66-523B-9982-4A9E461ED5F7",
         "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
         "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
@@ -1538,6 +1723,17 @@
         "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
         "ref_referenced_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
         "pub_name": "FK_cdic_column",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "F6127708-12B2-503E-884D-DC4A4C060B7C",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cdic_package",
         "pub_expression": null
       }
     },
@@ -1599,6 +1795,17 @@
     {
       "table": "contracts_db_constraints",
       "data": {
+        "key_guid": "FE164784-A1F0-5239-9C93-29A310EA849B",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cdcn_package",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
         "key_guid": "B67458F2-BD6A-58E6-B8FA-9CCE5DF276FE",
         "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
         "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
@@ -1654,6 +1861,17 @@
     {
       "table": "contracts_db_constraints",
       "data": {
+        "key_guid": "747A39E9-53BC-56B5-B092-AE775DF62732",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cdcc_package",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
         "key_guid": "5633E68B-8450-5323-828D-E0C74BDD1437",
         "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
         "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
@@ -1692,6 +1910,17 @@
         "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
         "ref_referenced_table_guid": null,
         "pub_name": "UQ_cdo_op",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "1DA448CB-C8BA-52DE-A172-659B30B3BBAF",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_cdo_package",
         "pub_expression": null
       }
     },
@@ -1740,6 +1969,17 @@
       }
     },
     {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "C4765E95-3E18-5EB8-A486-20D10839984C",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "FK_ssc_package",
+        "pub_expression": null
+      }
+    },
+    {
       "table": "contracts_db_constraint_columns",
       "data": {
         "key_guid": "28E35CBC-5209-59B4-AB0D-6B57A8B1AD67",
@@ -1756,6 +1996,16 @@
         "ref_constraint_guid": "0D415E3F-CEC7-50D9-BEAC-0A0A096B4FD1",
         "ref_column_guid": "9D1F216C-D771-5E26-ABC7-B66B8A5ED817",
         "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "FFDE8871-ABDC-54EC-BB5C-405082BEB44A",
+        "ref_constraint_guid": "7135D03A-55AC-546B-8BA4-2543E0440322",
+        "ref_column_guid": "051097F4-742D-541A-B095-D63C8197FD79",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
         "pub_ordinal": 1
       }
     },
@@ -1812,6 +2062,16 @@
     {
       "table": "contracts_db_constraint_columns",
       "data": {
+        "key_guid": "A4F0579F-2828-5882-AD02-08F3C6765B38",
+        "ref_constraint_guid": "45ECBA8D-79B1-59B4-8CDC-FB542C0EBC89",
+        "ref_column_guid": "786A88F1-2E1C-5AFC-A495-CEC0911A618D",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
         "key_guid": "C48C610C-FCF1-5D79-8720-EDFCA076BBCF",
         "ref_constraint_guid": "06A191A6-0221-586F-9F00-466709B5E8B7",
         "ref_column_guid": "73A6BF40-AA4E-55B7-83F7-C45B66FB3BEB",
@@ -1852,6 +2112,16 @@
     {
       "table": "contracts_db_constraint_columns",
       "data": {
+        "key_guid": "D7A6139A-6D4A-569D-BE5D-C8D03A278E84",
+        "ref_constraint_guid": "BBCE7E3B-323B-5050-BD2F-CAE060708C86",
+        "ref_column_guid": "61653298-214B-5A19-9545-9228D6169390",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
         "key_guid": "7407E3F7-F2C3-5298-A75E-CE3FEFB7C154",
         "ref_constraint_guid": "A8081EBE-FA07-5CF3-88FB-2ED73049A67D",
         "ref_column_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
@@ -1876,6 +2146,16 @@
         "ref_constraint_guid": "04850051-F195-5BC4-9AEB-D1940C16F3AF",
         "ref_column_guid": "50E34B8F-0A6A-5C10-B08E-B5F601D7DF89",
         "ref_referenced_column_guid": "342331DE-3D99-5422-BBE5-09F22583AE8E",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "70928ECA-5FDF-5086-BCF1-0B0DE918FEEC",
+        "ref_constraint_guid": "32940E00-1D6E-5B3E-B77F-D6DC61565F22",
+        "ref_column_guid": "370229B0-654E-5815-815C-1BBA78AF63E7",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
         "pub_ordinal": 1
       }
     },
@@ -1942,6 +2222,16 @@
     {
       "table": "contracts_db_constraint_columns",
       "data": {
+        "key_guid": "612046CB-D3A1-597A-B4E3-11AB3977A1B9",
+        "ref_constraint_guid": "A22E8687-5DD7-5157-BBF1-46DF9A76F9B3",
+        "ref_column_guid": "B4379B22-058C-5C00-8895-EFDA31A34E41",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
         "key_guid": "7A282332-DAAB-5E54-B1CA-D269C5BA6AC3",
         "ref_constraint_guid": "71723D9A-3C66-523B-9982-4A9E461ED5F7",
         "ref_column_guid": "FBE611B2-D7AC-5BDB-A89E-9D006A294D48",
@@ -1986,6 +2276,16 @@
         "ref_constraint_guid": "C1BD5F5F-A758-59BE-9997-37541BB15816",
         "ref_column_guid": "FADDDEEB-F94F-5B42-AEFE-80160DA6FFF1",
         "ref_referenced_column_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "2D8CFA1A-D5B0-5C72-822A-66179BD3A89D",
+        "ref_constraint_guid": "F6127708-12B2-503E-884D-DC4A4C060B7C",
+        "ref_column_guid": "D04892A7-11AB-595C-96E4-7AE9BCA53FDA",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
         "pub_ordinal": 1
       }
     },
@@ -2052,6 +2352,16 @@
     {
       "table": "contracts_db_constraint_columns",
       "data": {
+        "key_guid": "89E78415-3033-51B1-AAD8-2402A8524D8B",
+        "ref_constraint_guid": "FE164784-A1F0-5239-9C93-29A310EA849B",
+        "ref_column_guid": "1A2CE401-B96C-5F93-9EAD-F5B5415C1864",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
         "key_guid": "1ECBF2BF-BCB6-5FA9-8BCA-67CE281514B2",
         "ref_constraint_guid": "B67458F2-BD6A-58E6-B8FA-9CCE5DF276FE",
         "ref_column_guid": "39E71936-4AB9-551B-991C-2A7232708AE0",
@@ -2106,6 +2416,16 @@
         "ref_constraint_guid": "332243B2-4695-5ACE-B79A-63F112A3D443",
         "ref_column_guid": "5D830EC7-46FC-5989-91F1-0738E50D6AD3",
         "ref_referenced_column_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "56A06E5D-661C-5F1B-B24E-2229F8079A4B",
+        "ref_constraint_guid": "747A39E9-53BC-56B5-B092-AE775DF62732",
+        "ref_column_guid": "FF4EF298-9341-57BE-B72A-C2F203BE3641",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
         "pub_ordinal": 1
       }
     },
@@ -2172,6 +2492,16 @@
     {
       "table": "contracts_db_constraint_columns",
       "data": {
+        "key_guid": "1DB4655C-7A01-5652-974C-DD837F7BF6B5",
+        "ref_constraint_guid": "1DA448CB-C8BA-52DE-A172-659B30B3BBAF",
+        "ref_column_guid": "EBC5ED7C-5E99-5560-BB6F-B6A7A76C18EF",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
         "key_guid": "BF8966A9-669B-5091-94CB-7CC344E4D0F3",
         "ref_constraint_guid": "C0F153B3-D1E2-5172-8331-35126F6E9F2A",
         "ref_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
@@ -2206,6 +2536,16 @@
         "ref_constraint_guid": "84999C9C-B26E-5A99-94FF-E177773B15A8",
         "ref_column_guid": "24002AA6-E494-566B-904D-83D69658205B",
         "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "1215991C-4761-5111-96A9-4A3D676E67B5",
+        "ref_constraint_guid": "C4765E95-3E18-5EB8-A486-20D10839984C",
+        "ref_column_guid": "878BEB58-3292-51FC-BC62-B9793B81FB52",
+        "ref_referenced_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
         "pub_ordinal": 1
       }
     }
