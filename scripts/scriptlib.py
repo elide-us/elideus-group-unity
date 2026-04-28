@@ -853,3 +853,50 @@ async def apply(conn, path: str) -> None:
       count += 1
   print('Applied %d statements from %s.' % (count, path))
   
+
+# =============================================================================
+# install_seed
+# =============================================================================
+#
+# Reads a JSON package file and MERGEs each row into its declared target
+# table by key_guid. Format:
+#
+#   {
+#     "package": "<name>",
+#     "version": "<semver>",
+#     "rows": [
+#       {"table": "<table_name>", "data": {"key_guid": "...", ...}},
+#       ...
+#     ]
+#   }
+#
+# Each row is one MERGE on key_guid. Rows are processed in file order; the
+# author is responsible for ordering when FK dependencies exist within a
+# package (e.g. tables before columns before constraints). Idempotent:
+# re-running over the same package with the same data is a no-op.
+# =============================================================================
+
+async def install_seed(conn, path: str) -> None:
+  with open(path, 'r') as f:
+    package = json.load(f)
+
+  pkg_name = package.get('package', '<unnamed>')
+  pkg_version = package.get('version', '<unversioned>')
+  rows = package.get('rows', [])
+
+  print('Installing seed: %s v%s (%d rows)' % (pkg_name, pkg_version, len(rows)))
+
+  counts: dict[str, int] = {}
+  for i, row in enumerate(rows):
+    table = row['table']
+    data = row['data']
+    try:
+      await _merge(conn, table, 'key_guid', data)
+      counts[table] = counts.get(table, 0) + 1
+    except Exception as e:
+      print('  row %d (%s, key_guid=%s): %s' % (i, table, data.get('key_guid'), e))
+      raise
+
+  for table in sorted(counts.keys()):
+    print('  %-40s %d' % (table, counts[table]))
+  print('Seed install complete.')

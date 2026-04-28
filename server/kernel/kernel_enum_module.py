@@ -45,7 +45,7 @@ class KernelEnumModule(BaseModule):
 
     bootstrap_sql = """
       SELECT pub_enum_type, pub_name, pub_value
-      FROM service_enums
+      FROM contracts_primitives_enums
       FOR JSON PATH;
     """
     raw = await self._db.query(bootstrap_sql)

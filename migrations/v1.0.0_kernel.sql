@@ -1,4 +1,4 @@
--- Generated 2026-04-27 21:14:16 UTC
+-- Generated 2026-04-27 23:25:41 UTC
 SET ANSI_NULLS ON;
 GO
 SET QUOTED_IDENTIFIER ON;
@@ -139,6 +139,13 @@ CREATE TABLE [dbo].[service_modules_manifest] (
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
 );
+CREATE TABLE [dbo].[service_system_configuration] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [pub_key] NVARCHAR(256) NOT NULL,
+  [pub_value] NVARCHAR(MAX) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
 
 -- contracts_primitives_enums seed
 INSERT INTO [dbo].[contracts_primitives_enums]
@@ -172,6 +179,8 @@ ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [UQ_cdcc_cons
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [PK_contracts_db_constraints] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [UQ_cdcn_table_name] UNIQUE ([ref_table_guid], [pub_name]);
 ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [PK_contracts_db_columns] PRIMARY KEY ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [UQ_cdc_table_name] UNIQUE ([ref_table_guid], [pub_name]);
+ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [UQ_cdc_table_ordinal] UNIQUE ([ref_table_guid], [pub_ordinal]);
 ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [PK_contracts_db_indexes] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [UQ_cdi_table_name] UNIQUE ([ref_table_guid], [pub_name]);
 ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [PK_contracts_primitives_enums] PRIMARY KEY ([key_guid]);
@@ -179,6 +188,8 @@ ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [UQ_cpe_type_name]
 ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [UQ_cpe_type_value] UNIQUE ([pub_enum_type], [pub_value]);
 ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [PK_contracts_db_operations] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [UQ_cdo_op] UNIQUE ([pub_op]);
+ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [PK_system_configuration] PRIMARY KEY ([key_guid]);
+ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [UQ_sc_key] UNIQUE ([pub_key]);
 
 -- Constraints (FOREIGN KEY)
 ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_column] FOREIGN KEY ([ref_column_guid]) REFERENCES [dbo].[contracts_db_columns] ([key_guid]);

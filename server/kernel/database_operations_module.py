@@ -101,7 +101,7 @@ class DatabaseOperationsModule(BaseModule):
 
     bootstrap_sql = f"""
       SELECT pub_op, {self._query_column} AS query
-      FROM service_database_operations
+      FROM contracts_db_operations
       WHERE pub_bootstrap = 1 AND {self._query_column} IS NOT NULL
       FOR JSON PATH;
     """
@@ -130,7 +130,7 @@ class DatabaseOperationsModule(BaseModule):
   async def _load_op(self, op: str) -> str | None:
     sql = f"""
       SELECT {self._query_column} AS query
-      FROM service_database_operations
+      FROM contracts_db_operations
       WHERE pub_op = ?
       AND {self._query_column} IS NOT NULL
       FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;

@@ -50,7 +50,7 @@ class KernelConfigurationModule(BaseModule):
 
     bootstrap_sql = """
       SELECT pub_key, pub_value
-      FROM system_configuration
+      FROM service_system_configuration
       FOR JSON PATH;
     """
     raw = await db.query(bootstrap_sql)

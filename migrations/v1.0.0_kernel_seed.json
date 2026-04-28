@@ -1,0 +1,2213 @@
+{
+  "package": "kernel",
+  "version": "1.0.0",
+  "rows": [
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "pub_name": "contracts_db_columns",
+        "pub_schema": "dbo",
+        "pub_alias": "cdc"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "pub_name": "contracts_db_constraint_columns",
+        "pub_schema": "dbo",
+        "pub_alias": "cdcc"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "pub_name": "contracts_db_constraints",
+        "pub_schema": "dbo",
+        "pub_alias": "cdco"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "pub_name": "contracts_db_index_columns",
+        "pub_schema": "dbo",
+        "pub_alias": "cdic"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "pub_name": "contracts_db_indexes",
+        "pub_schema": "dbo",
+        "pub_alias": "cdi"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "pub_name": "contracts_db_operations",
+        "pub_schema": "dbo",
+        "pub_alias": "cdo"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "pub_name": "contracts_db_tables",
+        "pub_schema": "dbo",
+        "pub_alias": "cdt"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "pub_name": "contracts_primitives_enums",
+        "pub_schema": "dbo",
+        "pub_alias": "cpe"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "pub_name": "contracts_primitives_types",
+        "pub_schema": "dbo",
+        "pub_alias": "cpt"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "pub_name": "service_modules_manifest",
+        "pub_schema": "dbo",
+        "pub_alias": "smm"
+      }
+    },
+    {
+      "table": "contracts_db_tables",
+      "data": {
+        "key_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "pub_name": "service_system_configuration",
+        "pub_schema": "dbo",
+        "pub_alias": "ssc"
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "342331DE-3D99-5422-BBE5-09F22583AE8E",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "9D1F216C-D771-5E26-ABC7-B66B8A5ED817",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_name",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 64
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "C8EA075B-1DCC-501A-967D-174426F1ABDA",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_mssql_type",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "EDD306C1-946E-5F0D-A184-8B15FD9FFE34",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_postgresql_type",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "FE32CFF4-2208-5F07-AD71-BBB798E9C0A6",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_mysql_type",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "A7EE017A-88CF-5007-91FF-978638497465",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_python_type",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 64
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "F377B2DD-5571-52F5-BA30-EB06F63540BE",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_typescript_type",
+        "pub_ordinal": 7,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 64
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "31774B5F-3245-570A-831D-58E0F45374E3",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_json_type",
+        "pub_ordinal": 8,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 64
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "720D440D-BD1A-500A-8363-D86449F72266",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "18667606-C633-5A82-9A3B-2CD27916FC95",
+        "pub_name": "pub_odbc_type_code",
+        "pub_ordinal": 9,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "2D341328-DE9C-5B60-BE06-35111EE06B37",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
+        "pub_name": "pub_default_length",
+        "pub_ordinal": 10,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "A78B796F-D0C4-5EF3-962F-347C2DBC8E15",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_notes",
+        "pub_ordinal": 11,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": 512
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "9F0F68BC-E9FA-53DB-A727-57C6C6520FD7",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 12,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "DDE8A86B-50B0-5955-9E85-8079833D10A6",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 13,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "B96DA853-8D46-5150-908A-AD558171ECF5",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "DED0E736-35E9-597D-9C37-718BF74828C2",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_enum_type",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "7FD775AB-B7E4-5058-929C-7C6A7D07480C",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_name",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "737D3165-4804-5E6D-B83A-963BF6264011",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "0D331097-4AB4-5AA2-A481-07AB66A29BBD",
+        "pub_name": "pub_value",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "2F1550F7-7737-5218-9AE1-BB29195374AA",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_notes",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": 512
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "5B7C81D7-64E1-5223-81CD-739D353F6046",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "01FB7C9B-547E-5D78-9D23-1A432D774C52",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 7,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "73A6BF40-AA4E-55B7-83F7-C45B66FB3BEB",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "FD3134ED-70A0-52B9-820F-BAD83F49D5A1",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_name",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "A18FD9AB-2BE3-501A-AFE7-97832BCA4CE8",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_schema",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": "'dbo'",
+        "pub_max_length": 64
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "622B4E2B-6CB4-5115-AED9-6E20B9E45602",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_alias",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "BC33E4F1-6B3D-5C6A-A260-0460926C4C37",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "2917E4A1-C79D-5B6D-9DE6-2CF655231190",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "470A558B-D370-5172-BE39-0B2E162D07D5",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_table_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "50E34B8F-0A6A-5C10-B08E-B5F601D7DF89",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_type_guid",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "14442C2A-C212-500F-B74D-0C3A863C748D",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_name",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "2C9C6249-9035-5510-B2DD-A46BDDA8B1EB",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
+        "pub_name": "pub_ordinal",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "6ADFC298-BE4B-5715-B6F1-7961504F903D",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "72AD4685-D3E2-5A3F-941E-4EA9B0D3F9CC",
+        "pub_name": "pub_is_nullable",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "0",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "EE9988DB-ECB6-553E-BB0D-3238946F99BF",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_default_value",
+        "pub_ordinal": 7,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": 512
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "3F36DBDE-64C3-598F-9B6F-C5446E2D93FE",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
+        "pub_name": "pub_max_length",
+        "pub_ordinal": 8,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "BAAFFF72-1FE0-5506-98C0-8A1498B6550D",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 9,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "B8E4D383-9B39-5C56-9EC9-2B22CB6363A3",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 10,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "7C30719E-BC46-56E6-8225-B2C14286CAA1",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "FBE611B2-D7AC-5BDB-A89E-9D006A294D48",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_table_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "24C89908-0591-570B-8306-F8FD88460EA9",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_name",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 256
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "7593F2C6-9E0E-5D57-9752-17438F174CF4",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_type_guid": "72AD4685-D3E2-5A3F-941E-4EA9B0D3F9CC",
+        "pub_name": "pub_is_unique",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 0,
+        "pub_default_value": "0",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "4648A3C4-4101-5262-9A47-3E0DC6C86CEF",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "D99AC7AC-812E-58E5-A87A-1599D9DC9A6F",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "7B5E7600-B32F-59E2-8DAE-9362FAB2F3FA",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "687EE09B-C8BD-518B-81E3-F2ED9A756A18",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_index_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "FADDDEEB-F94F-5B42-AEFE-80160DA6FFF1",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_column_guid",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "44A145BC-7F02-57D6-BB09-C4DB268C4752",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
+        "pub_name": "pub_ordinal",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "1F419A12-FBE4-50FC-A41D-5615C58D3BE7",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "1D637253-99B9-5A6A-827C-DC5C2E2879E7",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "DA7EFBDF-4766-5F67-8208-A3DB217C5438",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "39E71936-4AB9-551B-991C-2A7232708AE0",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_table_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "3A4CB127-CE27-57E3-97C5-7594ABAA21B5",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_kind_enum_guid",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "912E5D26-28AC-57BA-806D-61C7B050315D",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_referenced_table_guid",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "857EE71B-7030-5AF4-ABE0-107545F2ABC5",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_name",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 256
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "A82C8413-4BE3-5AD9-BA87-FC5F1690BE48",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
+        "pub_name": "pub_expression",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "9174CFDA-0897-5004-B390-5AA1E5B59406",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 7,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "2FE25C6B-802D-5E1B-8AB9-D5F170B337D5",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 8,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "96968E71-E554-5BA4-8F1E-A261D360FA8C",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "B99167E6-595E-58B5-9C62-2AA96CA07EFA",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_constraint_guid",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "4E570980-EEEA-5914-8926-8ED3846D0CAD",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_column_guid",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "5D830EC7-46FC-5989-91F1-0738E50D6AD3",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "ref_referenced_column_guid",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "BCB4987D-418E-5EFE-A773-C03BBC94878B",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "1F2E7AE3-B435-5C98-A73D-ABF84F6A5E50",
+        "pub_name": "pub_ordinal",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "CB0324A0-3118-5049-8D87-4027F38BB984",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "6347E65E-9FF8-5E13-98BE-75D8A901A541",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 7,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "AFB9B868-04A9-5FA7-86E4-75879F71D326",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "C5C3E206-FE39-5B56-8397-987ECB1E9764",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_op",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 128
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "1270EFBC-5B96-5A14-B83F-B943ED6F7A1A",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
+        "pub_name": "pub_query_mssql",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "6E4F3D15-88D6-5E89-B8E0-5038E977C273",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
+        "pub_name": "pub_query_postgres",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "E3E11163-F74D-54FB-B6E3-CC1B352F2187",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
+        "pub_name": "pub_query_mysql",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "8F189730-90D1-5D55-94EF-AF05B9F71737",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "72AD4685-D3E2-5A3F-941E-4EA9B0D3F9CC",
+        "pub_name": "pub_bootstrap",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "0",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "2DB88E1A-2CFD-58A6-8C94-F4BD8CC105FB",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_notes",
+        "pub_ordinal": 7,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": 512
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "CDB01D24-0AB4-5EAD-9E5C-05742D73DBD8",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 8,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "F3B290EC-AD85-5A62-8E51-D93A548440D5",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 9,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "EDB0ABB4-8264-5353-BAA2-80F6F7B13DBC",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_name",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 256
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "A5648917-9E06-58B6-BE91-1E2BA6C08D06",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_version",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 64
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "00175493-0639-5F1A-A41E-D518C99BFBE9",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_last_version",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": 64
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "7B8B4EB3-196F-568E-9D8F-4F276D0F6394",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "72AD4685-D3E2-5A3F-941E-4EA9B0D3F9CC",
+        "pub_name": "pub_is_sealed",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": "0",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "F1ABC3A9-CB68-5102-B805-4FC2DEFB69EC",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_installed_on",
+        "pub_ordinal": 6,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "15104C7D-F9E2-5B98-BA23-B8E51D5D7F50",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 7,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "CCD09A76-4723-55BF-B575-74A96B8CCC3C",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 8,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "574B2044-75DB-5160-859E-D975DF78C411",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_type_guid": "DF427A75-F5DE-5797-988A-F2FF40BD7FA5",
+        "pub_name": "key_guid",
+        "pub_ordinal": 1,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "24002AA6-E494-566B-904D-83D69658205B",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_type_guid": "8579BB4B-746B-5E4B-867B-BFB182D52110",
+        "pub_name": "pub_key",
+        "pub_ordinal": 2,
+        "pub_is_nullable": 0,
+        "pub_default_value": null,
+        "pub_max_length": 256
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "62A02F32-33AC-5116-823E-BA1A6A82B688",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_type_guid": "8529FAA0-77FA-5C6E-B8D5-A3F886C973F6",
+        "pub_name": "pub_value",
+        "pub_ordinal": 3,
+        "pub_is_nullable": 1,
+        "pub_default_value": null,
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "61232429-7915-54E1-8F9F-B2E214D7C0EE",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_created_on",
+        "pub_ordinal": 4,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_columns",
+      "data": {
+        "key_guid": "AC5B1789-7D20-5B22-B347-BF4B81D00BBC",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_type_guid": "0A301083-D3E1-5119-9ADB-09B47A1E00FA",
+        "pub_name": "priv_modified_on",
+        "pub_ordinal": 5,
+        "pub_is_nullable": 0,
+        "pub_default_value": "SYSDATETIMEOFFSET()",
+        "pub_max_length": null
+      }
+    },
+    {
+      "table": "contracts_db_indexes",
+      "data": {
+        "key_guid": "CD822FE8-9EC0-58E4-8801-4B941BB012BD",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "pub_name": "IX_cdc_table_guid",
+        "pub_is_unique": 0
+      }
+    },
+    {
+      "table": "contracts_db_indexes",
+      "data": {
+        "key_guid": "26DE8D3E-D432-5E75-AF64-1403B982E794",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "pub_name": "IX_cdc_type_guid",
+        "pub_is_unique": 0
+      }
+    },
+    {
+      "table": "contracts_db_indexes",
+      "data": {
+        "key_guid": "0F9E8F7A-0F5C-5036-91DC-61C9341815C6",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "pub_name": "IX_cdi_table_guid",
+        "pub_is_unique": 0
+      }
+    },
+    {
+      "table": "contracts_db_indexes",
+      "data": {
+        "key_guid": "C40A693A-501C-59A9-A73A-45EC7FB88B3C",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "pub_name": "IX_cdic_index_guid",
+        "pub_is_unique": 0
+      }
+    },
+    {
+      "table": "contracts_db_indexes",
+      "data": {
+        "key_guid": "BA2CC18C-71C4-5A44-9BF8-7453B9E869AE",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "pub_name": "IX_cdcn_table_guid",
+        "pub_is_unique": 0
+      }
+    },
+    {
+      "table": "contracts_db_indexes",
+      "data": {
+        "key_guid": "C645D377-DCCB-5F6C-AA4D-14C210F406A3",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "pub_name": "IX_cdcn_kind",
+        "pub_is_unique": 0
+      }
+    },
+    {
+      "table": "contracts_db_indexes",
+      "data": {
+        "key_guid": "EEFA3DAB-9B0D-513B-ADA3-78D1FB89BBE8",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "pub_name": "IX_cdcc_constraint_guid",
+        "pub_is_unique": 0
+      }
+    },
+    {
+      "table": "contracts_db_index_columns",
+      "data": {
+        "key_guid": "54C5079B-1194-5F95-A739-974C89EB0A8D",
+        "ref_index_guid": "CD822FE8-9EC0-58E4-8801-4B941BB012BD",
+        "ref_column_guid": "470A558B-D370-5172-BE39-0B2E162D07D5",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_index_columns",
+      "data": {
+        "key_guid": "52662F80-5F26-5F97-88EA-B208F74D927A",
+        "ref_index_guid": "26DE8D3E-D432-5E75-AF64-1403B982E794",
+        "ref_column_guid": "50E34B8F-0A6A-5C10-B08E-B5F601D7DF89",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_index_columns",
+      "data": {
+        "key_guid": "32DC4C12-5FC5-5418-A337-3EC79B42C49E",
+        "ref_index_guid": "0F9E8F7A-0F5C-5036-91DC-61C9341815C6",
+        "ref_column_guid": "FBE611B2-D7AC-5BDB-A89E-9D006A294D48",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_index_columns",
+      "data": {
+        "key_guid": "4AE358E7-3311-5DAB-A055-26DC49B7905E",
+        "ref_index_guid": "C40A693A-501C-59A9-A73A-45EC7FB88B3C",
+        "ref_column_guid": "687EE09B-C8BD-518B-81E3-F2ED9A756A18",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_index_columns",
+      "data": {
+        "key_guid": "654FCA89-840B-5535-8697-C491A9F22786",
+        "ref_index_guid": "BA2CC18C-71C4-5A44-9BF8-7453B9E869AE",
+        "ref_column_guid": "39E71936-4AB9-551B-991C-2A7232708AE0",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_index_columns",
+      "data": {
+        "key_guid": "97389FC1-189C-50D1-8B00-8BFFBEBD6F8D",
+        "ref_index_guid": "C645D377-DCCB-5F6C-AA4D-14C210F406A3",
+        "ref_column_guid": "3A4CB127-CE27-57E3-97C5-7594ABAA21B5",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_index_columns",
+      "data": {
+        "key_guid": "55F48A82-07D7-557D-B54C-FB3FC322F19F",
+        "ref_index_guid": "EEFA3DAB-9B0D-513B-ADA3-78D1FB89BBE8",
+        "ref_column_guid": "B99167E6-595E-58B5-9C62-2AA96CA07EFA",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "6AEEDDD8-53E7-50DB-A570-CB3611940244",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_primitives_types",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "0D415E3F-CEC7-50D9-BEAC-0A0A096B4FD1",
+        "ref_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cpt_name",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "1F0342A5-DC41-5072-B291-4033F3519F3B",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_primitives_enums",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "BA4F1DA1-B7B8-580E-BE05-680230D568EA",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cpe_type_name",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "92A88C65-6FC6-5DE7-8627-77787A3213C5",
+        "ref_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cpe_type_value",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "06A191A6-0221-586F-9F00-466709B5E8B7",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_db_tables",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "285C4B28-C132-5D91-BB61-636FF7BC5028",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdt_alias",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "BCD8612D-4059-5B5B-988E-51E883A105C1",
+        "ref_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdt_schema_name",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "A8081EBE-FA07-5CF3-88FB-2ED73049A67D",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_db_columns",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "DCEEAAB9-4E81-5ED1-9D31-1BB47EEFE244",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "pub_name": "FK_cdc_table",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "04850051-F195-5BC4-9AEB-D1940C16F3AF",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "B7213805-2910-5427-A2BB-6B12CA1C15DF",
+        "pub_name": "FK_cdc_type",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "355F9FC0-D6DD-59FC-A46C-2EF3D5A7B8F0",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdc_table_name",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "459917E7-4F7D-5971-A921-691277F8E332",
+        "ref_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdc_table_ordinal",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "F92F1EB7-0081-5BAA-BF05-53E6A276DDF3",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_db_indexes",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "D0B31D49-BF37-58DA-986C-0CAD83D7ADF4",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "pub_name": "FK_cdi_table",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "71723D9A-3C66-523B-9982-4A9E461ED5F7",
+        "ref_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdi_table_name",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "E793EBE7-A766-5E9C-BBCD-695337189307",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_db_index_columns",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "47553222-0E84-5707-BCC7-4B3A7E441FB8",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "655C864A-3F4A-58A9-8061-D201FD579B59",
+        "pub_name": "FK_cdic_index",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "C1BD5F5F-A758-59BE-9997-37541BB15816",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "pub_name": "FK_cdic_column",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "89AB1683-5F17-5516-BA2D-821EB0CB9C93",
+        "ref_table_guid": "1B8DD864-DC8F-51C9-96D5-3192BE3C1976",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdic_index_column",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "B5B7650B-1FD3-5F25-BE73-290A9A543B07",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_db_constraints",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "E42A17B5-E51B-5E40-93BD-747C52DA79B0",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "pub_name": "FK_cdcn_table",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "60ED5AAF-00C1-5299-857E-40E4F798DA61",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "DB8900D4-9FBC-5544-B774-DBFCD14793EC",
+        "pub_name": "FK_cdcn_kind",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "9888D880-0CC0-5D4C-B5EC-CA654E79CC0A",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "23D68A88-D102-5D8A-8B19-490749B9127A",
+        "pub_name": "FK_cdcn_ref_table",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "B67458F2-BD6A-58E6-B8FA-9CCE5DF276FE",
+        "ref_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdcn_table_name",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "934BC014-5655-5BDF-8B3A-8B184134ED9E",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_db_constraint_columns",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "2CB220EF-E6F2-57F9-BFBA-5DF219BB9C41",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "76EEA9D8-FB6A-5E18-BD94-AFA5A991A56D",
+        "pub_name": "FK_cdcc_constraint",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "27DCF752-8E3C-564C-94BE-D239F4A34AAB",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "pub_name": "FK_cdcc_column",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "332243B2-4695-5ACE-B79A-63F112A3D443",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_kind_enum_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+        "ref_referenced_table_guid": "7246523B-B218-54AF-A71C-C6761B6F846D",
+        "pub_name": "FK_cdcc_ref_column",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "5633E68B-8450-5323-828D-E0C74BDD1437",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdcc_constraint_column",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "0670CF24-43C1-5B02-8B81-0A595C4C3FA5",
+        "ref_table_guid": "DD369802-79D4-5B50-BA5F-53EFE921B752",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdcc_constraint_ordinal",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "254463F8-641E-5CAE-9442-EE7337CCF406",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_contracts_db_operations",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "3860D329-F6A2-511F-A49C-4AC56C479E7C",
+        "ref_table_guid": "77B59E48-CE4F-5B1B-B3A5-E895F35317AE",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_cdo_op",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "C0F153B3-D1E2-5172-8331-35126F6E9F2A",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_service_modules_manifest",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "CC38D3CC-DF9C-5EE2-9224-E0C83CD3CEE2",
+        "ref_table_guid": "855F0DA4-6700-5402-BE81-2ECC543BFB54",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_smm_name",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "9CC1A95D-1479-5193-A0D3-5D5568A49B55",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_kind_enum_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+        "ref_referenced_table_guid": null,
+        "pub_name": "PK_system_configuration",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraints",
+      "data": {
+        "key_guid": "84999C9C-B26E-5A99-94FF-E177773B15A8",
+        "ref_table_guid": "AA6A6163-FA21-5936-9499-EA4C366F6FE9",
+        "ref_kind_enum_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+        "ref_referenced_table_guid": null,
+        "pub_name": "UQ_sc_key",
+        "pub_expression": null
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "28E35CBC-5209-59B4-AB0D-6B57A8B1AD67",
+        "ref_constraint_guid": "6AEEDDD8-53E7-50DB-A570-CB3611940244",
+        "ref_column_guid": "342331DE-3D99-5422-BBE5-09F22583AE8E",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "C251642A-CB33-5D28-851A-6D1A9FC6E34A",
+        "ref_constraint_guid": "0D415E3F-CEC7-50D9-BEAC-0A0A096B4FD1",
+        "ref_column_guid": "9D1F216C-D771-5E26-ABC7-B66B8A5ED817",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "FB4AFEE3-095C-52B2-8080-003952232CD1",
+        "ref_constraint_guid": "1F0342A5-DC41-5072-B291-4033F3519F3B",
+        "ref_column_guid": "B96DA853-8D46-5150-908A-AD558171ECF5",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "AD2EA007-FF08-5EE1-BDE5-B0D94BB39B64",
+        "ref_constraint_guid": "BA4F1DA1-B7B8-580E-BE05-680230D568EA",
+        "ref_column_guid": "DED0E736-35E9-597D-9C37-718BF74828C2",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "1FAAC7F6-3364-5CEA-AFE1-C111F382E0BD",
+        "ref_constraint_guid": "BA4F1DA1-B7B8-580E-BE05-680230D568EA",
+        "ref_column_guid": "7FD775AB-B7E4-5058-929C-7C6A7D07480C",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "6086B695-AC35-5772-8A3F-127493E83D82",
+        "ref_constraint_guid": "92A88C65-6FC6-5DE7-8627-77787A3213C5",
+        "ref_column_guid": "DED0E736-35E9-597D-9C37-718BF74828C2",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "851C09E6-D17B-5FA2-9FB2-BF0AD9E3B0EA",
+        "ref_constraint_guid": "92A88C65-6FC6-5DE7-8627-77787A3213C5",
+        "ref_column_guid": "737D3165-4804-5E6D-B83A-963BF6264011",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "C48C610C-FCF1-5D79-8720-EDFCA076BBCF",
+        "ref_constraint_guid": "06A191A6-0221-586F-9F00-466709B5E8B7",
+        "ref_column_guid": "73A6BF40-AA4E-55B7-83F7-C45B66FB3BEB",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "0B9B405E-46A7-549A-AA00-6BEF0DBFB902",
+        "ref_constraint_guid": "285C4B28-C132-5D91-BB61-636FF7BC5028",
+        "ref_column_guid": "622B4E2B-6CB4-5115-AED9-6E20B9E45602",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "8AD9F735-2B4C-5DD0-9990-9659E60B5C74",
+        "ref_constraint_guid": "BCD8612D-4059-5B5B-988E-51E883A105C1",
+        "ref_column_guid": "A18FD9AB-2BE3-501A-AFE7-97832BCA4CE8",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "2D84955A-6EB5-526A-9155-A176C80D1006",
+        "ref_constraint_guid": "BCD8612D-4059-5B5B-988E-51E883A105C1",
+        "ref_column_guid": "FD3134ED-70A0-52B9-820F-BAD83F49D5A1",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "7407E3F7-F2C3-5298-A75E-CE3FEFB7C154",
+        "ref_constraint_guid": "A8081EBE-FA07-5CF3-88FB-2ED73049A67D",
+        "ref_column_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "BA065519-9ED3-5ACF-833A-B6373F7EC233",
+        "ref_constraint_guid": "DCEEAAB9-4E81-5ED1-9D31-1BB47EEFE244",
+        "ref_column_guid": "470A558B-D370-5172-BE39-0B2E162D07D5",
+        "ref_referenced_column_guid": "73A6BF40-AA4E-55B7-83F7-C45B66FB3BEB",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "DAFD6C6D-0B8B-5C24-B951-C8D0B4F44F75",
+        "ref_constraint_guid": "04850051-F195-5BC4-9AEB-D1940C16F3AF",
+        "ref_column_guid": "50E34B8F-0A6A-5C10-B08E-B5F601D7DF89",
+        "ref_referenced_column_guid": "342331DE-3D99-5422-BBE5-09F22583AE8E",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "9823BCAE-0FD6-5772-B12D-F38C9DE25DE0",
+        "ref_constraint_guid": "355F9FC0-D6DD-59FC-A46C-2EF3D5A7B8F0",
+        "ref_column_guid": "470A558B-D370-5172-BE39-0B2E162D07D5",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "CE19CC4F-E972-5418-999B-86DE4458C44C",
+        "ref_constraint_guid": "355F9FC0-D6DD-59FC-A46C-2EF3D5A7B8F0",
+        "ref_column_guid": "14442C2A-C212-500F-B74D-0C3A863C748D",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "A95D8A38-18C4-5F6E-BDE3-03EA317C10E3",
+        "ref_constraint_guid": "459917E7-4F7D-5971-A921-691277F8E332",
+        "ref_column_guid": "470A558B-D370-5172-BE39-0B2E162D07D5",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "D9CC5A43-6578-57B2-8D1A-07CB122FB01A",
+        "ref_constraint_guid": "459917E7-4F7D-5971-A921-691277F8E332",
+        "ref_column_guid": "2C9C6249-9035-5510-B2DD-A46BDDA8B1EB",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "053D0AEE-17B7-5D3A-8CBA-BBACDAFC53D4",
+        "ref_constraint_guid": "F92F1EB7-0081-5BAA-BF05-53E6A276DDF3",
+        "ref_column_guid": "7C30719E-BC46-56E6-8225-B2C14286CAA1",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "5F034CA0-1514-55C4-BFDC-5897AC3A5910",
+        "ref_constraint_guid": "D0B31D49-BF37-58DA-986C-0CAD83D7ADF4",
+        "ref_column_guid": "FBE611B2-D7AC-5BDB-A89E-9D006A294D48",
+        "ref_referenced_column_guid": "73A6BF40-AA4E-55B7-83F7-C45B66FB3BEB",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "7A282332-DAAB-5E54-B1CA-D269C5BA6AC3",
+        "ref_constraint_guid": "71723D9A-3C66-523B-9982-4A9E461ED5F7",
+        "ref_column_guid": "FBE611B2-D7AC-5BDB-A89E-9D006A294D48",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "B39848E8-4438-5A54-9F6D-DDDDED41A9F3",
+        "ref_constraint_guid": "71723D9A-3C66-523B-9982-4A9E461ED5F7",
+        "ref_column_guid": "24C89908-0591-570B-8306-F8FD88460EA9",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "C03F4F7E-FFA5-55E2-9890-AA522E4769F5",
+        "ref_constraint_guid": "E793EBE7-A766-5E9C-BBCD-695337189307",
+        "ref_column_guid": "7B5E7600-B32F-59E2-8DAE-9362FAB2F3FA",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "C13E3E6D-8910-5251-8627-8A18BAC36246",
+        "ref_constraint_guid": "47553222-0E84-5707-BCC7-4B3A7E441FB8",
+        "ref_column_guid": "687EE09B-C8BD-518B-81E3-F2ED9A756A18",
+        "ref_referenced_column_guid": "7C30719E-BC46-56E6-8225-B2C14286CAA1",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "94028287-E667-5F33-964D-2B1A6536CEBC",
+        "ref_constraint_guid": "C1BD5F5F-A758-59BE-9997-37541BB15816",
+        "ref_column_guid": "FADDDEEB-F94F-5B42-AEFE-80160DA6FFF1",
+        "ref_referenced_column_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "DEAA982A-7064-5533-89E2-BD42F288B4DC",
+        "ref_constraint_guid": "89AB1683-5F17-5516-BA2D-821EB0CB9C93",
+        "ref_column_guid": "687EE09B-C8BD-518B-81E3-F2ED9A756A18",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "FED4C1B6-B740-563C-8E00-F591572B9CCC",
+        "ref_constraint_guid": "89AB1683-5F17-5516-BA2D-821EB0CB9C93",
+        "ref_column_guid": "FADDDEEB-F94F-5B42-AEFE-80160DA6FFF1",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "5052A70E-EC80-5632-9D71-C57F92312DD3",
+        "ref_constraint_guid": "B5B7650B-1FD3-5F25-BE73-290A9A543B07",
+        "ref_column_guid": "DA7EFBDF-4766-5F67-8208-A3DB217C5438",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "3F83FBB5-E8DB-59A5-9B9A-F64A623DE393",
+        "ref_constraint_guid": "E42A17B5-E51B-5E40-93BD-747C52DA79B0",
+        "ref_column_guid": "39E71936-4AB9-551B-991C-2A7232708AE0",
+        "ref_referenced_column_guid": "73A6BF40-AA4E-55B7-83F7-C45B66FB3BEB",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "DA37AC8A-F4C6-55D4-B1B0-1209611ACF01",
+        "ref_constraint_guid": "60ED5AAF-00C1-5299-857E-40E4F798DA61",
+        "ref_column_guid": "3A4CB127-CE27-57E3-97C5-7594ABAA21B5",
+        "ref_referenced_column_guid": "B96DA853-8D46-5150-908A-AD558171ECF5",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "D6AE50DB-C0B4-5B3A-A491-30EEAB8061D1",
+        "ref_constraint_guid": "9888D880-0CC0-5D4C-B5EC-CA654E79CC0A",
+        "ref_column_guid": "912E5D26-28AC-57BA-806D-61C7B050315D",
+        "ref_referenced_column_guid": "73A6BF40-AA4E-55B7-83F7-C45B66FB3BEB",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "1ECBF2BF-BCB6-5FA9-8BCA-67CE281514B2",
+        "ref_constraint_guid": "B67458F2-BD6A-58E6-B8FA-9CCE5DF276FE",
+        "ref_column_guid": "39E71936-4AB9-551B-991C-2A7232708AE0",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "52EC194E-A504-5A72-ADC8-7850510A1D7E",
+        "ref_constraint_guid": "B67458F2-BD6A-58E6-B8FA-9CCE5DF276FE",
+        "ref_column_guid": "857EE71B-7030-5AF4-ABE0-107545F2ABC5",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "60D880CC-87FA-5EDE-AA2E-F665531993D3",
+        "ref_constraint_guid": "934BC014-5655-5BDF-8B3A-8B184134ED9E",
+        "ref_column_guid": "96968E71-E554-5BA4-8F1E-A261D360FA8C",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "888495F1-42A1-5F1F-98D6-CD325D174D97",
+        "ref_constraint_guid": "2CB220EF-E6F2-57F9-BFBA-5DF219BB9C41",
+        "ref_column_guid": "B99167E6-595E-58B5-9C62-2AA96CA07EFA",
+        "ref_referenced_column_guid": "DA7EFBDF-4766-5F67-8208-A3DB217C5438",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "EB4C02F4-B5DF-54B6-B5D4-083FEE452D4D",
+        "ref_constraint_guid": "27DCF752-8E3C-564C-94BE-D239F4A34AAB",
+        "ref_column_guid": "4E570980-EEEA-5914-8926-8ED3846D0CAD",
+        "ref_referenced_column_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "71DD65CA-7358-5CEE-8FA5-7AB0B93627A4",
+        "ref_constraint_guid": "332243B2-4695-5ACE-B79A-63F112A3D443",
+        "ref_column_guid": "5D830EC7-46FC-5989-91F1-0738E50D6AD3",
+        "ref_referenced_column_guid": "B58997CD-F630-5887-8BA5-C04755BA1A37",
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "399E0597-933D-537F-AF5B-3E521DC29060",
+        "ref_constraint_guid": "5633E68B-8450-5323-828D-E0C74BDD1437",
+        "ref_column_guid": "B99167E6-595E-58B5-9C62-2AA96CA07EFA",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "FF65CB35-DFA9-5E64-970C-C0BCE880C2E1",
+        "ref_constraint_guid": "5633E68B-8450-5323-828D-E0C74BDD1437",
+        "ref_column_guid": "4E570980-EEEA-5914-8926-8ED3846D0CAD",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "46F2111D-4D9D-58A4-B28C-CE56CF7B6735",
+        "ref_constraint_guid": "0670CF24-43C1-5B02-8B81-0A595C4C3FA5",
+        "ref_column_guid": "B99167E6-595E-58B5-9C62-2AA96CA07EFA",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "2EC8262B-C6C8-5880-B69D-167A2B35BE09",
+        "ref_constraint_guid": "0670CF24-43C1-5B02-8B81-0A595C4C3FA5",
+        "ref_column_guid": "BCB4987D-418E-5EFE-A773-C03BBC94878B",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 2
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "19F205B0-5BDC-546B-A267-20E8F3EEC4E4",
+        "ref_constraint_guid": "254463F8-641E-5CAE-9442-EE7337CCF406",
+        "ref_column_guid": "AFB9B868-04A9-5FA7-86E4-75879F71D326",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "F42F4A7F-02B1-58C3-876E-AA6BD1C1806B",
+        "ref_constraint_guid": "3860D329-F6A2-511F-A49C-4AC56C479E7C",
+        "ref_column_guid": "C5C3E206-FE39-5B56-8397-987ECB1E9764",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "BF8966A9-669B-5091-94CB-7CC344E4D0F3",
+        "ref_constraint_guid": "C0F153B3-D1E2-5172-8331-35126F6E9F2A",
+        "ref_column_guid": "131404F3-E1C4-5F57-BCB5-8A62B90CED0F",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "AEBD6457-E230-599B-ADB5-71E8EB89FD9D",
+        "ref_constraint_guid": "CC38D3CC-DF9C-5EE2-9224-E0C83CD3CEE2",
+        "ref_column_guid": "EDB0ABB4-8264-5353-BAA2-80F6F7B13DBC",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "6954A026-FD1E-525D-8397-2360A24F53CB",
+        "ref_constraint_guid": "9CC1A95D-1479-5193-A0D3-5D5568A49B55",
+        "ref_column_guid": "574B2044-75DB-5160-859E-D975DF78C411",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    },
+    {
+      "table": "contracts_db_constraint_columns",
+      "data": {
+        "key_guid": "702B4B39-E98B-5653-92E1-B166C157BAEA",
+        "ref_constraint_guid": "84999C9C-B26E-5A99-94FF-E177773B15A8",
+        "ref_column_guid": "24002AA6-E494-566B-904D-83D69658205B",
+        "ref_referenced_column_guid": null,
+        "pub_ordinal": 1
+      }
+    }
+  ]
+}
