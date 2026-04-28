@@ -900,3 +900,223 @@ async def install_seed(conn, path: str) -> None:
   for table in sorted(counts.keys()):
     print('  %-40s %d' % (table, counts[table]))
   print('Seed install complete.')
+
+
+# =============================================================================
+# install
+# =============================================================================
+#
+# Full package install pipeline. A package JSON has the shape:
+#
+#   {
+#     "package": "<name>",
+#     "version": "<semver>",
+#     "schema": [
+#       {"table": "contracts_db_tables",            "data": {...}},
+#       {"table": "contracts_db_columns",           "data": {...}},
+#       {"table": "contracts_db_constraints",       "data": {...}},
+#       {"table": "contracts_db_constraint_columns","data": {...}},
+#       ...
+#     ],
+#     "data": [
+#       {"table": "<arbitrary>", "data": {...}},
+#       ...
+#     ]
+#   }
+#
+# Phases:
+#   1. seed_schema     — MERGE rows from `schema` into contracts_db_*
+#   2. materialize     — diff contracts_db_tables vs sys.tables; for each
+#                        declared-but-missing table, generate and run DDL
+#                        (CREATE TABLE + indexes + PK/UNIQUE/CHECK + FKs).
+#   3. seed_data       — MERGE rows from `data` into target tables
+#   4. manifest        — MERGE row into service_modules_manifest with
+#                        pub_is_sealed = 1
+#
+# Failure handling: each phase is a try/except boundary. On error, prints
+# which phase, which row (if applicable), and the full exception. The
+# pipeline halts immediately. Re-running is safe — every step is MERGE-
+# idempotent. DDL in phase 2 is guarded against re-running by a left-anti-
+# join on sys.tables, so re-runs only create what's still missing.
+# =============================================================================
+
+
+async def _existing_table_names(conn) -> set[str]:
+  """Return {schema.table} for every table currently in sys.tables."""
+  rows = await _query_json(
+    conn,
+    """SELECT s.name AS pub_schema, t.name AS pub_name
+       FROM sys.tables t
+       JOIN sys.schemas s ON t.schema_id = s.schema_id
+       FOR JSON PATH"""
+  )
+  return {'%s.%s' % (r['pub_schema'], r['pub_name']) for r in rows}
+
+
+async def _materialize(conn) -> None:
+  """Phase 2. Read contracts_db_*, find tables declared but not in sys.tables,
+  generate and execute DDL for them. Reuses the same builders dump uses, so
+  output is identical to what dump would emit for those tables."""
+  schema = await _read_schema(conn)
+  existing = await _existing_table_names(conn)
+
+  # Filter to tables declared in contracts_db_tables that aren't physical yet
+  missing = [
+    t for t in schema['tables']
+    if '%s.%s' % (t['pub_schema'], t['pub_name']) not in existing
+  ]
+  if not missing:
+    print('  no tables to materialize')
+    return
+
+  missing_guids = {t['key_guid'] for t in missing}
+  table_by_guid = {t['key_guid']: t for t in schema['tables']}
+
+  print('  materializing %d table(s):' % len(missing))
+  for t in missing:
+    print('    %s.%s' % (t['pub_schema'], t['pub_name']))
+
+  # CREATE TABLE for each missing table
+  for table in missing:
+    ddl = _build_create_table(table, schema['columns'])
+    async with conn.cursor() as cur:
+      await cur.execute(ddl)
+
+  # Indexes on missing tables
+  for idx in schema['indexes']:
+    if idx['ref_table_guid'] not in missing_guids:
+      continue
+    table = table_by_guid.get(idx['ref_table_guid'])
+    if not table:
+      continue
+    ddl = _build_create_index(idx, table, schema['index_columns'])
+    async with conn.cursor() as cur:
+      await cur.execute(ddl)
+
+  # Constraints — two passes (PK/UQ/CHECK first, FK second)
+  # Each constraint applies only if its owning table is missing AND, for FKs,
+  # if the referenced table either already exists or was just created here.
+  for con in schema['constraints']:
+    if con['kind_name'] == 'FOREIGN_KEY':
+      continue
+    if con['ref_table_guid'] not in missing_guids:
+      continue
+    table = table_by_guid.get(con['ref_table_guid'])
+    if not table:
+      continue
+    ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
+    ddl = _build_constraint(con, table, ref_table, schema['constraint_columns'])
+    async with conn.cursor() as cur:
+      await cur.execute(ddl)
+
+  for con in schema['constraints']:
+    if con['kind_name'] != 'FOREIGN_KEY':
+      continue
+    if con['ref_table_guid'] not in missing_guids:
+      continue
+    table = table_by_guid.get(con['ref_table_guid'])
+    if not table:
+      continue
+    ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
+    if ref_table is None:
+      raise ValueError('FK %s on %s.%s has no resolvable referenced table' % (
+        con['pub_name'], table['pub_schema'], table['pub_name']))
+    ddl = _build_constraint(con, table, ref_table, schema['constraint_columns'])
+    async with conn.cursor() as cur:
+      await cur.execute(ddl)
+
+
+async def _merge_rows_phase(conn, rows: list, phase_name: str) -> dict[str, int]:
+  """Generic MERGE-each-row helper used by both seed_schema and seed_data
+  phases. Returns count-by-table dict on success; raises on first error
+  with row index and table name attached to the message."""
+  counts: dict[str, int] = {}
+  for i, row in enumerate(rows):
+    if 'table' not in row or 'data' not in row:
+      raise ValueError('%s row %d malformed: missing "table" or "data" key' % (phase_name, i))
+    table = row['table']
+    data = row['data']
+    if 'key_guid' not in data:
+      raise ValueError('%s row %d (%s) missing key_guid' % (phase_name, i, table))
+    try:
+      await _merge(conn, table, 'key_guid', data)
+    except Exception as e:
+      raise RuntimeError('%s row %d (%s, key_guid=%s): %s' % (
+        phase_name, i, table, data.get('key_guid'), e)) from e
+    counts[table] = counts.get(table, 0) + 1
+  return counts
+
+
+def _print_counts(counts: dict[str, int]) -> None:
+  for table in sorted(counts.keys()):
+    print('    %-40s %d' % (table, counts[table]))
+
+
+async def install(conn, path: str) -> None:
+  # Read package
+  try:
+    with open(path, 'r') as f:
+      package = json.load(f)
+  except FileNotFoundError:
+    print('Error: package file not found: %s' % path)
+    return
+  except json.JSONDecodeError as e:
+    print('Error: package file is not valid JSON: %s' % e)
+    return
+
+  pkg_name = package.get('package')
+  pkg_version = package.get('version')
+  if not pkg_name or not pkg_version:
+    print('Error: package file missing required "package" or "version" field')
+    return
+
+  schema_rows = package.get('schema', [])
+  data_rows = package.get('data', [])
+
+  print('Installing %s v%s' % (pkg_name, pkg_version))
+  print('  schema rows: %d' % len(schema_rows))
+  print('  data rows:   %d' % len(data_rows))
+
+  # ---- Phase 1: seed schema declarations ----
+  print('Phase 1: seed_schema')
+  try:
+    counts = await _merge_rows_phase(conn, schema_rows, 'seed_schema')
+    _print_counts(counts)
+  except Exception as e:
+    print('  FAILED: %s' % e)
+    return
+
+  # ---- Phase 2: materialize ----
+  print('Phase 2: materialize')
+  try:
+    await _materialize(conn)
+  except Exception as e:
+    print('  FAILED: %s' % e)
+    return
+
+  # ---- Phase 3: seed data ----
+  print('Phase 3: seed_data')
+  try:
+    counts = await _merge_rows_phase(conn, data_rows, 'seed_data')
+    _print_counts(counts)
+  except Exception as e:
+    print('  FAILED: %s' % e)
+    return
+
+  # ---- Phase 4: manifest ----
+  print('Phase 4: manifest')
+  try:
+    manifest_guid = _guid('service_modules_manifest', pkg_name)
+    await _merge(conn, 'service_modules_manifest', 'key_guid', {
+      'key_guid': manifest_guid,
+      'pub_name': pkg_name,
+      'pub_version': pkg_version,
+      'pub_last_version': pkg_version,
+      'pub_is_sealed': 1,
+    })
+    print('    %s v%s sealed' % (pkg_name, pkg_version))
+  except Exception as e:
+    print('  FAILED: %s' % e)
+    return
+
+  print('Install complete.')

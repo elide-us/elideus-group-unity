@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-from scriptlib import connect, populate, dump, apply, install_seed
+from scriptlib import connect, populate, dump, apply, install_seed, install
 
 
 HELP_TEXT = """\
@@ -13,6 +13,7 @@ Available commands:
   dump [name]                   Read objects_schema_*, write <name>_YYYYMMDD.sql
   install seed <file>           Read JSON package, MERGE rows into target tables
   apply <file>                  Execute the named .sql against the database
+  install <file>                Run package install pipeline (schema → materialize → data → manifest)
   <raw sql>                     Run as-is, print rows or rowcount
 """
 
@@ -60,6 +61,11 @@ async def interactive_console(conn):
           await install_seed(conn, path)
         except Exception as e:
           print('Error installing seed: %s' % e)
+      case ['install', path]:
+        try:
+          await install(conn, path)
+        except Exception as e:
+          print('Error installing: %s' % e)
       case _:
         try:
           async with conn.cursor() as cur:
