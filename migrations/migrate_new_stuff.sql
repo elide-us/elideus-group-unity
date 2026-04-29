@@ -204,3 +204,160 @@ SELECT [pub_name], [pub_seed_element]
 FROM [dbo].[contracts_db_tables]
 ORDER BY [pub_seed_element], [pub_name];
 GO
+
+
+
+
+
+
+
+
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+ALTER TABLE [dbo].[contracts_db_columns]
+  ADD [pub_exclude_element] BIT NOT NULL CONSTRAINT [DF_cdc_pub_exclude_element] DEFAULT (0);
+GO
+
+UPDATE [dbo].[contracts_db_columns]
+SET    [pub_exclude_element] = 1
+WHERE  [pub_name] IN ('ref_package_guid', 'priv_created_on', 'priv_modified_on');
+GO
+
+SELECT [pub_name], COUNT(*) AS n
+FROM   [dbo].[contracts_db_columns]
+WHERE  [pub_exclude_element] = 1
+GROUP BY [pub_name]
+ORDER BY [pub_name];
+GO
+
+
+
+
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+ALTER TABLE [dbo].[contracts_primitives_types]
+  ADD [pub_mssql_sys_type] NVARCHAR(64) NULL;
+GO
+
+-- Direct sys.types matches: bare type names that resolve unambiguously.
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'bit'              WHERE [pub_name] = 'BOOL';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'tinyint'          WHERE [pub_name] = 'INT8';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'smallint'         WHERE [pub_name] = 'INT16';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'int'              WHERE [pub_name] = 'INT32';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'bigint'           WHERE [pub_name] = 'INT64';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'real'             WHERE [pub_name] = 'FLOAT32';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'float'            WHERE [pub_name] = 'FLOAT64';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'nvarchar'         WHERE [pub_name] = 'STRING';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'uniqueidentifier' WHERE [pub_name] = 'UUID';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'date'             WHERE [pub_name] = 'DATE';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'datetimeoffset'   WHERE [pub_name] = 'DATETIME_TZ';
+UPDATE [dbo].[contracts_primitives_types] SET [pub_mssql_sys_type] = 'vector'           WHERE [pub_name] = 'VECTOR';
+
+-- Ambiguous or parameterized variants stay NULL — only reached through
+-- _resolve_type_name disambiguation rules.
+-- TEXT: nvarchar + max_length=-1
+-- JSON_DOC: nvarchar + max_length=-1 (collides with TEXT, can't be auto-resolved)
+-- BINARY: varbinary + max_length=-1
+-- INT64_IDENTITY: bigint + is_identity
+-- DECIMAL_19_5/28_12/38_18: decimal + precision/scale
+GO
+
+SELECT pub_name, pub_mssql_type, pub_mssql_sys_type
+FROM contracts_primitives_types
+ORDER BY pub_name;
+GO
+
+
+
+
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+UPDATE c
+  SET pub_exclude_element = 1
+  FROM contracts_db_columns c
+  WHERE c.pub_name IN ('ref_package_guid', 'priv_created_on', 'priv_modified_on', 'priv_installed_on')
+    AND c.pub_exclude_element = 0;
+GO
+
+SELECT t.pub_name AS table_name, c.pub_name AS column_name, c.pub_exclude_element
+  FROM contracts_db_columns c
+  JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid
+  WHERE c.pub_name IN ('ref_package_guid', 'priv_created_on', 'priv_modified_on', 'priv_installed_on')
+  ORDER BY t.pub_name, c.pub_ordinal;
+GO
+
+
+
+
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+ALTER TABLE [dbo].[contracts_primitives_types]
+  ADD [pub_emits_length] BIT NOT NULL CONSTRAINT [DF_cpt_pub_emits_length] DEFAULT (0);
+GO
+
+UPDATE [dbo].[contracts_primitives_types]
+SET    [pub_emits_length] = 1
+WHERE  [pub_name] IN ('STRING', 'VECTOR');
+GO
+
+SELECT [pub_name], [pub_mssql_type], [pub_emits_length]
+FROM   [dbo].[contracts_primitives_types]
+ORDER BY [pub_name];
+GO
+
+
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+-- Drop the DEFAULT constraint first (named auto if added inline)
+DECLARE @df_name NVARCHAR(256);
+SELECT @df_name = dc.name
+  FROM sys.default_constraints dc
+  JOIN sys.columns c ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+  JOIN sys.tables t ON c.object_id = t.object_id
+  WHERE t.name = 'service_modules_manifest' AND c.name = 'priv_installed_on';
+
+IF @df_name IS NOT NULL
+BEGIN
+  EXEC('ALTER TABLE [dbo].[service_modules_manifest] DROP CONSTRAINT [' + @df_name + ']');
+END;
+GO
+
+ALTER TABLE [dbo].[service_modules_manifest] DROP COLUMN [priv_installed_on];
+GO
+
+-- Verify
+SELECT name FROM sys.columns
+  WHERE object_id = OBJECT_ID('dbo.service_modules_manifest')
+  ORDER BY column_id;
+GO
+
+
+DELETE c
+  FROM contracts_db_columns c
+  JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid
+  WHERE t.pub_schema = 'dbo'
+    AND t.pub_name = 'service_modules_manifest'
+    AND c.pub_name = 'priv_installed_on';
+
+
+    

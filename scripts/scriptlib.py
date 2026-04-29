@@ -47,26 +47,13 @@ def _guid(entity_type: str, natural_key: str) -> str:
   return str(uuid.uuid5(NS_HASH, '%s:%s' % (entity_type, natural_key))).upper()
 
 
-# Known MSSQL builtin functions that may appear in default-value expressions.
-# Uppercased in dump output to match SQL convention; introspection returns
-# them lowercase from sys.* catalog views.
-_KNOWN_SQL_FUNCTIONS = (
-  'sysdatetimeoffset', 'sysdatetime', 'sysutcdatetime',
-  'getdate', 'getutcdate', 'current_timestamp',
-  'newid', 'newsequentialid',
-  'object_definition',
-)
-
-
 def _upper_sql_functions(expr: str | None) -> str | None:
-  """Uppercase known MSSQL function names in a default-value expression so
-  emitted DDL matches conventional uppercase style."""
+  """Uppercase function-call identifiers in a default-value expression so
+  emitted DDL matches conventional SQL style. Identifies functions by the
+  trailing parenthesis pattern."""
   if not expr:
     return expr
-  result = expr
-  for fn in _KNOWN_SQL_FUNCTIONS:
-    result = re.sub(r'\b' + fn + r'\b', fn.upper(), result, flags=re.IGNORECASE)
-  return result
+  return re.sub(r'\b([a-z_][a-z0-9_]*)\s*\(', lambda m: m.group(1).upper() + '(', expr, flags=re.IGNORECASE)
 
 
 async def _fetch_json(cur):
@@ -172,33 +159,32 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 # Idempotent via MERGE on deterministic key_guid.
 # =============================================================================
 
-# MSSQL system type name -> contracts_primitives_types.pub_name
-_TYPE_MAP = {
-  'bit': 'BOOL',
-  'tinyint': 'INT8',
-  'smallint': 'INT16',
-  'int': 'INT32',
-  'bigint': 'INT64',
-  'real': 'FLOAT32',
-  'float': 'FLOAT64',
-  'decimal': 'DECIMAL_19_5',
-  'numeric': 'DECIMAL_19_5',
-  'nvarchar': 'STRING',
-  'varchar': 'STRING',
-  'nchar': 'STRING',
-  'char': 'STRING',
-  'uniqueidentifier': 'UUID',
-  'date': 'DATE',
-  'datetimeoffset': 'DATETIME_TZ',
-  'datetime2': 'DATETIME_TZ',
-  'datetime': 'DATETIME_TZ',
-  'varbinary': 'BINARY',
-  'binary': 'BINARY',
-  'vector': 'VECTOR',
-}
+async def _load_type_lookup(conn) -> tuple[dict[str, str], dict[str, str]]:
+  """Reads contracts_primitives_types and returns two lookups:
+     1. {pub_mssql_sys_type: pub_name} — direct sys.types -> contracts mapping
+     2. {pub_name: key_guid}
+  Types whose pub_mssql_sys_type is NULL are reached only through
+  _resolve_type_name's disambiguation rules.
+  """
+  rows = await _query_json(
+    conn,
+    "SELECT pub_name, pub_mssql_sys_type, key_guid FROM contracts_primitives_types FOR JSON PATH, INCLUDE_NULL_VALUES"
+  )
+  base_to_name: dict[str, str] = {}
+  name_to_guid: dict[str, str] = {}
+  for r in rows:
+    name_to_guid[r['pub_name']] = r['key_guid']
+    if r['pub_mssql_sys_type'] is not None:
+      base_to_name[r['pub_mssql_sys_type']] = r['pub_name']
+  return base_to_name, name_to_guid
 
 
-def _resolve_type_name(sys_type: str, max_length: int | None, precision: int | None, scale: int | None, is_identity: bool) -> str:
+def _resolve_type_name(base_to_name: dict[str, str], sys_type: str,
+                       max_length: int | None, precision: int | None,
+                       scale: int | None, is_identity: bool) -> str:
+  """Resolves a sys.columns type description to a contracts_primitives_types
+  pub_name. Handles the cases that aren't 1:1 lookups: identity, decimal
+  precision/scale variants, and nvarchar(MAX) -> TEXT."""
   st = sys_type.lower()
   if st == 'bigint' and is_identity:
     return 'INT64_IDENTITY'
@@ -212,17 +198,11 @@ def _resolve_type_name(sys_type: str, max_length: int | None, precision: int | N
     raise ValueError('unsupported decimal precision/scale: (%s,%s)' % (precision, scale))
   if st == 'nvarchar' and max_length == -1:
     return 'TEXT'
-  if st in _TYPE_MAP:
-    return _TYPE_MAP[st]
-  raise ValueError('unmapped sys_type: %s' % sys_type)
-
-
-async def _load_type_guids(conn) -> dict[str, str]:
-  rows = await _query_json(
-    conn,
-    "SELECT pub_name, key_guid FROM contracts_primitives_types FOR JSON PATH"
-  )
-  return {r['pub_name']: r['key_guid'] for r in rows}
+  if st == 'varbinary' and max_length == -1:
+    return 'BINARY'
+  if st in base_to_name:
+    return base_to_name[st]
+  raise ValueError('unmapped sys_type: %s (no contracts_primitives_types row with matching pub_mssql_type)' % sys_type)
 
 
 async def _populate_tables(conn) -> dict[str, str]:
@@ -256,7 +236,9 @@ async def _populate_tables(conn) -> dict[str, str]:
   return guids
 
 
-async def _populate_columns(conn, table_guids: dict[str, str], type_guids: dict[str, str]) -> dict[str, str]:
+async def _populate_columns(conn, table_guids: dict[str, str],
+                            base_to_name: dict[str, str],
+                            name_to_guid: dict[str, str]) -> dict[str, str]:
   rows = await _query_json(
     conn,
     """SELECT
@@ -284,9 +266,9 @@ async def _populate_columns(conn, table_guids: dict[str, str], type_guids: dict[
     if not table_guid:
       continue
     type_name = _resolve_type_name(
-      r['sys_type'], r['sys_max_length'], r['sys_precision'], r['sys_scale'], bool(r['sys_is_identity'])
+      base_to_name, r['sys_type'], r['sys_max_length'], r['sys_precision'], r['sys_scale'], bool(r['sys_is_identity'])
     )
-    type_guid = type_guids[type_name]
+    type_guid = name_to_guid[type_name]
     max_length = None
     st = r['sys_type'].lower()
     if st in ('nvarchar', 'nchar') and r['sys_max_length'] != -1:
@@ -531,9 +513,9 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
 
 async def populate(conn) -> None:
   print('Populating contracts_db_*...')
-  type_guids = await _load_type_guids(conn)
+  base_to_name, name_to_guid = await _load_type_lookup(conn)
   table_guids = await _populate_tables(conn)
-  column_guids = await _populate_columns(conn, table_guids, type_guids)
+  column_guids = await _populate_columns(conn, table_guids, base_to_name, name_to_guid)
   index_guids = await _populate_indexes(conn, table_guids)
   await _populate_index_columns(conn, index_guids, column_guids)
   constraint_guids = await _populate_constraints(conn, table_guids)
@@ -545,38 +527,35 @@ async def populate(conn) -> None:
 # dump
 # =============================================================================
 
-async def _read_types(conn) -> list[dict]:
-  return await _query_json(
+async def _read_table_projection(conn, table_name: str) -> tuple[list[str], list[dict]]:
+  """Reads a table's projected columns (filtering pub_exclude_element = 1)
+  and returns (column_names, rows). The projection is sourced from
+  contracts_db_columns, the same way generate_seed does it; this keeps
+  the dump's seed builders consistent with the install seed format.
+
+  Sort: pub_ordinal if the projection includes it, else by all projected
+  columns in their pub_ordinal order. Same rule as generate_seed."""
+  table_row = await _query_json(
     conn,
-    """SELECT key_guid, pub_name, pub_mssql_type, pub_postgresql_type, pub_mysql_type,
-              pub_python_type, pub_typescript_type, pub_json_type,
-              pub_odbc_type_code, pub_default_length, pub_notes
-       FROM contracts_primitives_types
-       ORDER BY pub_name
-       FOR JSON PATH, INCLUDE_NULL_VALUES"""
+    "SELECT key_guid FROM contracts_db_tables WHERE pub_name = ? FOR JSON PATH",
+    (table_name,)
   )
+  if not table_row:
+    raise ValueError('table %s not found in contracts_db_tables' % table_name)
+  table_guid = table_row[0]['key_guid']
 
+  columns = await _read_seed_column_projection(conn, table_guid)
+  if not columns:
+    return ([], [])
 
-async def _read_enum_types(conn) -> list[dict]:
-  return await _query_json(
-    conn,
-    """SELECT key_guid, pub_name, pub_notes
-       FROM contracts_primitives_enum_types
-       ORDER BY pub_name
-       FOR JSON PATH, INCLUDE_NULL_VALUES"""
-  )
-
-
-async def _read_enums(conn) -> list[dict]:
-  return await _query_json(
-    conn,
-    """SELECT e.key_guid, e.ref_enum_type_guid, et.pub_name AS enum_type_name,
-              e.pub_name, e.pub_value, e.pub_notes
-       FROM contracts_primitives_enums e
-       JOIN contracts_primitives_enum_types et ON e.ref_enum_type_guid = et.key_guid
-       ORDER BY et.pub_name, e.pub_value
-       FOR JSON PATH, INCLUDE_NULL_VALUES"""
-  )
+  order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
+  select_list = ', '.join(columns)
+  sql = (
+    'SELECT %s FROM [%s] ORDER BY %s '
+    'FOR JSON PATH, INCLUDE_NULL_VALUES'
+  ) % (select_list, table_name, order_by)
+  rows = await _query_json(conn, sql)
+  return (columns, rows)
 
 
 async def _read_schema(conn) -> dict:
@@ -591,7 +570,8 @@ async def _read_schema(conn) -> dict:
     conn,
     """SELECT c.key_guid, c.ref_table_guid, c.pub_name, c.pub_ordinal,
               c.pub_is_nullable, c.pub_default_value, c.pub_max_length,
-              t.pub_mssql_type, t.pub_default_length, t.pub_name AS type_name
+              t.pub_mssql_type, t.pub_default_length, t.pub_name AS type_name,
+              t.pub_emits_length
        FROM contracts_db_columns c
        JOIN contracts_primitives_types t ON c.ref_type_guid = t.key_guid
        ORDER BY c.ref_table_guid, c.pub_ordinal
@@ -644,11 +624,13 @@ async def _read_schema(conn) -> dict:
 
 def _column_ddl(col: dict) -> str:
   ctype = col['pub_mssql_type']
-  type_name = col['type_name']
-  if type_name == 'STRING':
+  if col.get('pub_emits_length'):
     length = col.get('pub_max_length') or col.get('pub_default_length')
     if length is None:
-      raise ValueError('STRING column %s has no length' % col['pub_name'])
+      raise ValueError(
+        'column %s has type %s which emits length but no length value (pub_max_length or pub_default_length)'
+        % (col['pub_name'], col['type_name'])
+      )
     ctype = '%s(%d)' % (ctype, length)
   parts = ['[%s]' % col['pub_name'], ctype]
   default_value = col.get('pub_default_value')
@@ -704,88 +686,84 @@ def _build_constraint(con: dict, table: dict, ref_table: dict | None,
   )
 
 
-def _build_types_seed(types: list[dict]) -> str:
-  lines = ['INSERT INTO [dbo].[contracts_primitives_types]',
-           '  (key_guid, pub_name, pub_mssql_type, pub_postgresql_type, pub_mysql_type,',
-           '   pub_python_type, pub_typescript_type, pub_json_type,',
-           '   pub_odbc_type_code, pub_default_length, pub_notes)',
-           'VALUES']
-  vals = []
-  for t in types:
-    def q(v):
-      if v is None:
-        return 'NULL'
-      if isinstance(v, int):
-        return str(v)
-      return "'%s'" % str(v).replace("'", "''")
-    vals.append('  (%s)' % ', '.join([
-      "'%s'" % t['key_guid'],
-      q(t['pub_name']),
-      q(t['pub_mssql_type']),
-      q(t['pub_postgresql_type']),
-      q(t['pub_mysql_type']),
-      q(t['pub_python_type']),
-      q(t['pub_typescript_type']),
-      q(t['pub_json_type']),
-      q(t['pub_odbc_type_code']),
-      q(t['pub_default_length']),
-      q(t['pub_notes']),
-    ]))
-  return '\n'.join(lines) + '\n' + ',\n'.join(vals) + ';'
+def _quote_sql_value(v) -> str:
+  """Format a Python value as a SQL literal for INSERT statements."""
+  if v is None:
+    return 'NULL'
+  if isinstance(v, bool):
+    return '1' if v else '0'
+  if isinstance(v, int):
+    return str(v)
+  return "'%s'" % str(v).replace("'", "''")
 
 
-def _build_enum_types_seed(enum_types: list[dict]) -> str:
-  if not enum_types:
+def _build_table_seed(table_name: str, columns: list[str], rows: list[dict]) -> str:
+  """Generic INSERT builder for any table. Takes the projection column list
+  and the rows, emits an INSERT statement. Returns empty string for empty
+  input. Column list and row values stay aligned because both come from
+  the same contracts_db_columns projection."""
+  if not rows:
     return ''
-  lines = ['INSERT INTO [dbo].[contracts_primitives_enum_types]',
-           '  (key_guid, pub_name, pub_notes)',
+  col_list = ', '.join(columns)
+  lines = ['INSERT INTO [dbo].[%s]' % table_name,
+           '  (%s)' % col_list,
            'VALUES']
   vals = []
-  for et in enum_types:
-    def q(v):
-      if v is None:
-        return 'NULL'
-      if isinstance(v, int):
-        return str(v)
-      return "'%s'" % str(v).replace("'", "''")
-    vals.append('  (%s)' % ', '.join([
-      "'%s'" % et['key_guid'],
-      q(et['pub_name']),
-      q(et['pub_notes']),
-    ]))
+  for row in rows:
+    vals.append('  (%s)' % ', '.join(_quote_sql_value(row[c]) for c in columns))
   return '\n'.join(lines) + '\n' + ',\n'.join(vals) + ';'
 
 
-def _build_enums_seed(enums: list[dict]) -> str:
-  if not enums:
+async def _read_column_exclusions(conn) -> list[dict]:
+  """Reads all contracts_db_columns rows where pub_exclude_element = 1,
+  joined to contracts_db_tables for the natural-key context. Used by
+  dump to emit authored override UPDATE statements at the end of the
+  install script, so the flag values survive install -> populate cycles
+  on a fresh database.
+
+  Sort: by table natural key then column name, for deterministic output."""
+  return await _query_json(
+    conn,
+    """SELECT t.pub_schema, t.pub_name AS table_name, c.pub_name AS column_name
+       FROM contracts_db_columns c
+       JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid
+       WHERE c.pub_exclude_element = 1
+       ORDER BY t.pub_schema, t.pub_name, c.pub_name
+       FOR JSON PATH"""
+  )
+
+
+def _build_column_exclusions_update(rows: list[dict]) -> str:
+  """Emits a single UPDATE that sets pub_exclude_element = 1 on every
+  (schema, table, column) tuple in rows. Uses natural-key joins so the
+  emitted SQL doesn't depend on key_guid stability."""
+  if not rows:
     return ''
-  lines = ['INSERT INTO [dbo].[contracts_primitives_enums]',
-           '  (key_guid, ref_enum_type_guid, pub_name, pub_value, pub_notes)',
-           'VALUES']
-  vals = []
-  for e in enums:
-    def q(v):
-      if v is None:
-        return 'NULL'
-      if isinstance(v, int):
-        return str(v)
-      return "'%s'" % str(v).replace("'", "''")
-    vals.append('  (%s)' % ', '.join([
-      "'%s'" % e['key_guid'],
-      "'%s'" % e['ref_enum_type_guid'],
-      q(e['pub_name']),
-      q(e['pub_value']),
-      q(e['pub_notes']),
-    ]))
-  return '\n'.join(lines) + '\n' + ',\n'.join(vals) + ';'
+  predicates = []
+  for r in rows:
+    predicates.append(
+      "(t.pub_schema = '%s' AND t.pub_name = '%s' AND c.pub_name = '%s')" % (
+        r['pub_schema'].replace("'", "''"),
+        r['table_name'].replace("'", "''"),
+        r['column_name'].replace("'", "''"),
+      )
+    )
+  return (
+    'UPDATE c\n'
+    '  SET pub_exclude_element = 1\n'
+    '  FROM contracts_db_columns c\n'
+    '  JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid\n'
+    '  WHERE %s;'
+  ) % ('\n     OR '.join(predicates))
 
 
 async def dump(conn, prefix: str = 'schema') -> str:
   print('Reading schema...')
-  types = await _read_types(conn)
-  enum_types = await _read_enum_types(conn)
-  enums = await _read_enums(conn)
+  types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types')
+  enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types')
+  enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums')
   schema = await _read_schema(conn)
+  column_exclusions = await _read_column_exclusions(conn)
 
   table_by_guid = {t['key_guid']: t for t in schema['tables']}
 
@@ -810,7 +788,7 @@ async def dump(conn, prefix: str = 'schema') -> str:
     for con in types_constraints:
       ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
       sections.append(_build_constraint(con, types_table, ref_table, schema['constraint_columns']))
-  sections.append(_build_types_seed(types))
+  sections.append(_build_table_seed('contracts_primitives_types', types_columns, types))
   sections.append('GO')
   sections.append('')
 
@@ -826,10 +804,10 @@ async def dump(conn, prefix: str = 'schema') -> str:
 
   if enums:
     sections.append('-- contracts_primitives_enum_types seed')
-    sections.append(_build_enum_types_seed(enum_types))
+    sections.append(_build_table_seed('contracts_primitives_enum_types', enum_types_columns, enum_types))
     sections.append('')
     sections.append('-- contracts_primitives_enums seed')
-    sections.append(_build_enums_seed(enums))
+    sections.append(_build_table_seed('contracts_primitives_enums', enums_columns, enums))
     sections.append('')
 
   sections.append('-- Indexes')
@@ -869,6 +847,18 @@ async def dump(conn, prefix: str = 'schema') -> str:
       continue
     ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
     sections.append(_build_constraint(con, table, ref_table, schema['constraint_columns']))
+
+  # Authored overrides on contracts_db_columns. populate() rebuilds these
+  # rows from sys.* introspection on every run, so any authored flag values
+  # (pub_exclude_element specifically) get reset to column DEFAULT. The
+  # install script needs to re-apply them after populate has run, which on
+  # a fresh install happens during install/materialize. Emitting these at
+  # the end of the dump means the kernel install script restores the
+  # authored state as its final action.
+  if column_exclusions:
+    sections.append('')
+    sections.append('-- Authored overrides: pub_exclude_element on contracts_db_columns')
+    sections.append(_build_column_exclusions_update(column_exclusions))
 
   ts = datetime.now(timezone.utc).strftime('%Y%m%d')
   filename = '%s_%s.sql' % (prefix, ts)
@@ -949,84 +939,84 @@ async def install_seed(conn, path: str) -> None:
 # =============================================================================
 #
 # Generates a kernel-package seed JSON file by reading the contracts_db_*
-# cluster directly. Filters on ref_package_guid IS NULL — kernel-owned rows
-# predate the manifest entries that would otherwise own them, so NULL is
-# the kernel's package-ownership marker.
+# cluster directly. Fully data-driven: the seed table list, the install
+# order, and the per-table column projections all come from the database.
 #
-# Output is the same flat-rows shape consumed by install_seed:
+# Seed-set membership and load order: contracts_db_tables.pub_seed_element.
+# Zero means not seed; nonzero is the install-order ordinal.
+#
+# Per-table projection: every column on the table except priv_* timestamps
+# and ref_package_guid. Both are install-pipeline concerns, not seed-data
+# concerns — timestamps come from column DEFAULT at MERGE time,
+# ref_package_guid is auto-injected by the install pipeline.
+#
+# Per-table row sort: pub_ordinal if the table has it (junction tables and
+# anything else where ordinal is meaningful), otherwise the projected
+# columns in their pub_ordinal order. Output is for install scripts, not
+# human reading — the goal is determinism, not aesthetics.
+#
+# Output is the flat-rows shape consumed by install_seed:
 #   {package, version, rows: [{table, data}, ...]}
-#
-# Row order matches install dependency order: tables, columns, indexes,
-# index_columns, constraints, constraint_columns. Within each table, rows
-# are sorted to make the output deterministic across runs.
-#
-# Currently scoped to the kernel package (ref_package_guid IS NULL). When
-# make_package lands in DatabaseManagementModule, this logic moves there
-# and accepts a package-name argument that resolves to a manifest GUID.
-#
-# Note: priv_* timestamps and ref_package_guid are deliberately omitted
-# from the projection. install_seed expects neither — timestamps come from
-# column defaults at MERGE time, and ref_package_guid for non-kernel
-# packages is auto-injected by the install pipeline. Including them here
-# would force specific values into every install, which is wrong.
 # =============================================================================
 
-# Tables emitted in dependency-safe install order, paired with the ORDER BY
-# clause that produces deterministic output across runs.
-_KERNEL_SEED_TABLES = [
-  ('contracts_db_tables',             'pub_schema, pub_name'),
-  ('contracts_db_columns',            'ref_table_guid, pub_ordinal'),
-  ('contracts_db_indexes',            'ref_table_guid, pub_name'),
-  ('contracts_db_index_columns',      'ref_index_guid, pub_ordinal'),
-  ('contracts_db_constraints',        'ref_table_guid, pub_name'),
-  ('contracts_db_constraint_columns', 'ref_constraint_guid, pub_ordinal'),
-]
+async def _read_seed_table_list(conn) -> list[dict]:
+  """Returns seed-flagged tables ordered by their install-order ordinal."""
+  return await _query_json(
+    conn,
+    """SELECT key_guid, pub_name, pub_seed_element
+       FROM contracts_db_tables
+       WHERE pub_seed_element > 0
+       ORDER BY pub_seed_element
+       FOR JSON PATH"""
+  )
 
-# Per-table column projections — exactly the columns install_seed writes
-# into each row's data dict. Excludes priv_* timestamps and ref_package_guid.
-_KERNEL_SEED_COLUMNS = {
-  'contracts_db_tables': [
-    'key_guid', 'pub_name', 'pub_schema', 'pub_alias',
-  ],
-  'contracts_db_columns': [
-    'key_guid', 'ref_table_guid', 'ref_type_guid', 'pub_name',
-    'pub_ordinal', 'pub_is_nullable', 'pub_default_value', 'pub_max_length',
-  ],
-  'contracts_db_indexes': [
-    'key_guid', 'ref_table_guid', 'pub_name', 'pub_is_unique',
-  ],
-  'contracts_db_index_columns': [
-    'key_guid', 'ref_index_guid', 'ref_column_guid', 'pub_ordinal',
-  ],
-  'contracts_db_constraints': [
-    'key_guid', 'ref_table_guid', 'ref_kind_enum_guid',
-    'ref_referenced_table_guid', 'pub_name', 'pub_expression',
-  ],
-  'contracts_db_constraint_columns': [
-    'key_guid', 'ref_constraint_guid', 'ref_column_guid',
-    'ref_referenced_column_guid', 'pub_ordinal',
-  ],
-}
 
+async def _read_seed_column_projection(conn, table_guid: str) -> list[str]:
+  """Returns the projected column names for a seed table, in pub_ordinal
+  order. Excludes columns flagged with pub_exclude_element = 1."""
+  rows = await _query_json(
+    conn,
+    """SELECT pub_name
+       FROM contracts_db_columns
+       WHERE ref_table_guid = ?
+         AND pub_exclude_element = 0
+       ORDER BY pub_ordinal
+       FOR JSON PATH""",
+    (table_guid,)
+  )
+  return [r['pub_name'] for r in rows]
 
 async def generate_seed(conn, path: str,
                         package: str = 'kernel',
                         version: str = '1.0.0') -> None:
-  """Read kernel-owned rows from contracts_db_*, emit as a seed JSON file."""
+  """Read seed-flagged rows from contracts_db_*, emit as a seed JSON file."""
+  seed_tables = await _read_seed_table_list(conn)
+  if not seed_tables:
+    print('No seed tables found (no contracts_db_tables rows with pub_seed_element > 0).')
+    return
+
   rows: list[dict] = []
   counts: dict[str, int] = {}
 
-  for table, order_by in _KERNEL_SEED_TABLES:
-    columns = _KERNEL_SEED_COLUMNS[table]
+  for t in seed_tables:
+    table_name = t['pub_name']
+    columns = await _read_seed_column_projection(conn, t['key_guid'])
+    if not columns:
+      counts[table_name] = 0
+      continue
+
+    # Sort by pub_ordinal if the table has it, else by the projected columns.
+    order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
+
     select_list = ', '.join(columns)
     sql = (
-      'SELECT %s FROM [%s] WHERE ref_package_guid IS NULL ORDER BY %s '
+      'SELECT %s FROM [%s] ORDER BY %s '
       'FOR JSON PATH, INCLUDE_NULL_VALUES'
-    ) % (select_list, table, order_by)
+    ) % (select_list, table_name, order_by)
     table_rows = await _query_json(conn, sql)
     for row in table_rows:
-      rows.append({'table': table, 'data': row})
-    counts[table] = len(table_rows)
+      rows.append({'table': table_name, 'data': row})
+    counts[table_name] = len(table_rows)
 
   package_doc = {
     'package': package,
@@ -1039,8 +1029,8 @@ async def generate_seed(conn, path: str,
 
   print('Generated seed: %s' % path)
   print('  package: %s v%s' % (package, version))
-  for table, _ in _KERNEL_SEED_TABLES:
-    print('  %-40s %d' % (table, counts[table]))
+  for t in seed_tables:
+    print('  %-40s %d' % (t['pub_name'], counts[t['pub_name']]))
   print('  total: %d rows' % len(rows))
 
 
