@@ -9,8 +9,8 @@ Available commands:
   help                          Show this help message
   exit, quit                    Exit the console
   reconnect <dbname>            Connect to a different database
-  populate                      Introspect database, write objects_schema_* rows
-  dump [name]                   Read objects_schema_*, write <name>_YYYYMMDD.sql
+  populate                      Introspect database, write contracts_db_* rows
+  dump [name]                   Read contracts_db_*, write <name>_YYYYMMDD.sql
   install seed <file>           Read JSON package, MERGE rows into target tables
   generate seed <file>          Read kernel rows from contracts_db_*, write JSON seed to <file>
   apply <file>                  Execute the named .sql against the database
