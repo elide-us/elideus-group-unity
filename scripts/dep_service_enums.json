@@ -1,0 +1,164 @@
+[
+  {
+    "key_guid": "CA757B99-5A75-58E2-AA45-0EACD9FED659",
+    "pub_enum_type": "task_operation_ddl",
+    "pub_name": "ALTER_COLUMN",
+    "pub_value": 1,
+    "pub_notes": "Alter an existing column. pub_spec holds table + column spec.",
+    "priv_created_on": "2026-04-17T23:36:10.5780220Z",
+    "priv_modified_on": "2026-04-17T23:36:10.5780220Z"
+  },
+  {
+    "key_guid": "8516211A-E77F-5BFA-9709-17EF0994EB2E",
+    "pub_enum_type": "task_operation_ddl",
+    "pub_name": "CREATE_TABLE",
+    "pub_value": 0,
+    "pub_notes": "Create a new table. pub_spec holds full table/column spec.",
+    "priv_created_on": "2026-04-17T23:36:10.5780220Z",
+    "priv_modified_on": "2026-04-17T23:36:10.5780220Z"
+  },
+  {
+    "key_guid": "5A5FC56F-C6D0-5DE0-94C5-2F20B19FCAD4",
+    "pub_enum_type": "task_disposition",
+    "pub_name": "REVERSIBLE",
+    "pub_value": 0,
+    "pub_notes": "Task effect can be undone via a compensating task (e.g., create_index ? drop_index).",
+    "priv_created_on": "2026-04-17T23:36:10.6574143Z",
+    "priv_modified_on": "2026-04-17T23:36:10.6574143Z"
+  },
+  {
+    "key_guid": "EE3E40AD-7BC2-5C93-81EC-3822C8791F44",
+    "pub_enum_type": "task_status",
+    "pub_name": "RUNNING",
+    "pub_value": 1,
+    "pub_notes": "Picked up and actively executing.",
+    "priv_created_on": "2026-04-17T23:36:10.4975898Z",
+    "priv_modified_on": "2026-04-17T23:36:10.4975898Z"
+  },
+  {
+    "key_guid": "531AADE2-47F7-5984-9875-3ACEAB414F1D",
+    "pub_enum_type": "task_disposition",
+    "pub_name": "TRANSIENT",
+    "pub_value": 2,
+    "pub_notes": "Task has no persistent effect; safe to discard mid-execution.",
+    "priv_created_on": "2026-04-17T23:36:10.6574143Z",
+    "priv_modified_on": "2026-04-17T23:36:10.6574143Z"
+  },
+  {
+    "key_guid": "0F54301D-3856-59BF-9E59-442DA2255A95",
+    "pub_enum_type": "task_disposition",
+    "pub_name": "CANCELLABLE",
+    "pub_value": 3,
+    "pub_notes": "Task may be cancelled before or during execution without a compensating task.",
+    "priv_created_on": "2026-04-17T23:36:10.6574143Z",
+    "priv_modified_on": "2026-04-17T23:36:10.6574143Z"
+  },
+  {
+    "key_guid": "5D32C5A0-5D83-5C2B-95B7-54404C068704",
+    "pub_enum_type": "task_status",
+    "pub_name": "FAILED",
+    "pub_value": 3,
+    "pub_notes": "Execution failed. priv_error holds the failure detail.",
+    "priv_created_on": "2026-04-17T23:36:10.4975898Z",
+    "priv_modified_on": "2026-04-17T23:36:10.4975898Z"
+  },
+  {
+    "key_guid": "3426C194-B912-5F71-802F-566E2FF1E8FF",
+    "pub_enum_type": "constraint_kind",
+    "pub_name": "PRIMARY_KEY",
+    "pub_value": 0,
+    "pub_notes": "Primary key constraint. One per table. Columns via constraint_columns junction.",
+    "priv_created_on": "2026-04-17T23:36:10.1336544Z",
+    "priv_modified_on": "2026-04-17T23:36:10.1336544Z"
+  },
+  {
+    "key_guid": "C3B202EB-2405-5F75-A4B6-6899EF7812CB",
+    "pub_enum_type": "task_disposition",
+    "pub_name": "IRREVERSIBLE",
+    "pub_value": 1,
+    "pub_notes": "Task effect cannot be undone through the system (e.g., drop_table). Requires external recovery.",
+    "priv_created_on": "2026-04-17T23:36:10.6574143Z",
+    "priv_modified_on": "2026-04-17T23:36:10.6574143Z"
+  },
+  {
+    "key_guid": "79357640-A35E-5B8C-843A-837083978C70",
+    "pub_enum_type": "task_status",
+    "pub_name": "PENDING",
+    "pub_value": 0,
+    "pub_notes": "Declared, awaiting pickup by the consuming module.",
+    "priv_created_on": "2026-04-17T23:36:10.4975898Z",
+    "priv_modified_on": "2026-04-17T23:36:10.4975898Z"
+  },
+  {
+    "key_guid": "32B301C0-3BAC-55BF-A773-8BCD1E6BAD10",
+    "pub_enum_type": "task_operation_ddl",
+    "pub_name": "DROP_INDEX",
+    "pub_value": 4,
+    "pub_notes": "Drop an index by name. pub_spec holds table + index name.",
+    "priv_created_on": "2026-04-17T23:36:10.5780220Z",
+    "priv_modified_on": "2026-04-17T23:36:10.5780220Z"
+  },
+  {
+    "key_guid": "79128086-3678-5DDA-967D-8DA02D41A7E5",
+    "pub_enum_type": "task_status",
+    "pub_name": "COMPLETE",
+    "pub_value": 2,
+    "pub_notes": "Executed successfully.",
+    "priv_created_on": "2026-04-17T23:36:10.4975898Z",
+    "priv_modified_on": "2026-04-17T23:36:10.4975898Z"
+  },
+  {
+    "key_guid": "4D75333D-E472-5813-A03B-C0162671A00D",
+    "pub_enum_type": "constraint_kind",
+    "pub_name": "UNIQUE",
+    "pub_value": 2,
+    "pub_notes": "Unique constraint. Columns via constraint_columns junction.",
+    "priv_created_on": "2026-04-17T23:36:10.1336544Z",
+    "priv_modified_on": "2026-04-17T23:36:10.1336544Z"
+  },
+  {
+    "key_guid": "475DBD6E-C7E8-537D-8581-C8277D2F0698",
+    "pub_enum_type": "task_status",
+    "pub_name": "CANCELLING",
+    "pub_value": 4,
+    "pub_notes": "Cancellation requested. Consumer should abort and transition to failed or complete.",
+    "priv_created_on": "2026-04-17T23:36:10.4975898Z",
+    "priv_modified_on": "2026-04-17T23:36:10.4975898Z"
+  },
+  {
+    "key_guid": "92400F11-FCFD-5285-B9E2-D682B2496A88",
+    "pub_enum_type": "constraint_kind",
+    "pub_name": "CHECK",
+    "pub_value": 3,
+    "pub_notes": "Check constraint. pub_expression on the constraint row holds the predicate.",
+    "priv_created_on": "2026-04-17T23:36:10.1336544Z",
+    "priv_modified_on": "2026-04-17T23:36:10.1336544Z"
+  },
+  {
+    "key_guid": "B6ABA725-1FDB-5454-B164-DDBE11079598",
+    "pub_enum_type": "constraint_kind",
+    "pub_name": "FOREIGN_KEY",
+    "pub_value": 1,
+    "pub_notes": "Foreign key constraint. Source and target columns via constraint_columns junction.",
+    "priv_created_on": "2026-04-17T23:36:10.1336544Z",
+    "priv_modified_on": "2026-04-17T23:36:10.1336544Z"
+  },
+  {
+    "key_guid": "C0352EBD-8E26-53D1-918F-E2F1EA07B175",
+    "pub_enum_type": "task_operation_ddl",
+    "pub_name": "CREATE_INDEX",
+    "pub_value": 2,
+    "pub_notes": "Create a new index. pub_spec holds index spec + column membership.",
+    "priv_created_on": "2026-04-17T23:36:10.5780220Z",
+    "priv_modified_on": "2026-04-17T23:36:10.5780220Z"
+  },
+  {
+    "key_guid": "592FEE5D-0EF9-581C-803B-F34CB7281D4F",
+    "pub_enum_type": "task_operation_ddl",
+    "pub_name": "DROP_CONSTRAINT",
+    "pub_value": 3,
+    "pub_notes": "Drop a constraint by name. pub_spec holds table + constraint name.",
+    "priv_created_on": "2026-04-17T23:36:10.5780220Z",
+    "priv_modified_on": "2026-04-17T23:36:10.5780220Z"
+  }
+]

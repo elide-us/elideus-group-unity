@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 
 # ----------------------------------------------------------------------------
-# ModuleManager
+# KernelModuleManager
 # ----------------------------------------------------------------------------
 # Module lifecycle manager. Discovers, instantiates, and
 # manages the startup/shutdown lifecycle of all modules. Independent of
@@ -74,7 +74,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #
 # ----------------------------------------------------------------------------
 
-class ModuleManager:
+class KernelModuleManager:
   def __init__(self, app: FastAPI):
     self.app = app
     self._instances: Dict[type, BaseModule] = {}

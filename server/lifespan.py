@@ -3,13 +3,13 @@ import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from server.kernel import ModuleManager
+from server.kernel import KernelModuleManager
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-  modules = ModuleManager(app)
+  modules = KernelModuleManager(app)
   try:
     await modules.startup()
 
