@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-from scriptlib import connect, populate, dump, apply, install_seed, install
+from scriptlib import connect, populate, dump, apply, install_seed, install, list_packages, uninstall, generate_seed
 
 
 HELP_TEXT = """\
@@ -12,8 +12,12 @@ Available commands:
   populate                      Introspect database, write objects_schema_* rows
   dump [name]                   Read objects_schema_*, write <name>_YYYYMMDD.sql
   install seed <file>           Read JSON package, MERGE rows into target tables
+  generate seed <file>          Read kernel rows from contracts_db_*, write JSON seed to <file>
   apply <file>                  Execute the named .sql against the database
-  install <file>                Run package install pipeline (schema → materialize → data → manifest)
+  install <file>                Run package install pipeline (register → schema → materialize → data → seal)
+  list packages                 Show installed packages and row ownership
+  uninstall <name>              Show uninstall plan (dry run)
+  uninstall <name> confirm      Execute uninstall
   <raw sql>                     Run as-is, print rows or rowcount
 """
 
@@ -61,11 +65,31 @@ async def interactive_console(conn):
           await install_seed(conn, path)
         except Exception as e:
           print('Error installing seed: %s' % e)
+      case ['generate', 'seed', path]:
+        try:
+          await generate_seed(conn, path)
+        except Exception as e:
+          print('Error generating seed: %s' % e)
       case ['install', path]:
         try:
           await install(conn, path)
         except Exception as e:
           print('Error installing: %s' % e)
+      case ['list', 'packages']:
+        try:
+          await list_packages(conn)
+        except Exception as e:
+          print('Error listing: %s' % e)
+      case ['uninstall', name]:
+        try:
+          await uninstall(conn, name, confirm=False)
+        except Exception as e:
+          print('Error: %s' % e)
+      case ['uninstall', name, 'confirm']:
+        try:
+          await uninstall(conn, name, confirm=True)
+        except Exception as e:
+          print('Error: %s' % e)
       case _:
         try:
           async with conn.cursor() as cur:
