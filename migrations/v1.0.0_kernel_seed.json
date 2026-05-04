@@ -3166,16 +3166,6 @@
         "ref_referenced_column_guid": null,
         "pub_ordinal": 2
       }
-    },
-    {
-      "table": "service_modules_manifest",
-      "data": {
-        "key_guid": "2EDDC1DD-391E-56EA-8BC9-611E0CD3A7A7",
-        "pub_name": "test_widgets",
-        "pub_version": "1.0.0",
-        "pub_last_version": "1.0.0",
-        "pub_is_sealed": true
-      }
     }
   ]
 }

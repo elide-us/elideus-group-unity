@@ -595,7 +595,8 @@ async def _read_schema(conn) -> dict:
   constraints = await _query_json(
     conn,
     """SELECT cn.key_guid, cn.ref_table_guid, cn.ref_referenced_table_guid,
-              cn.pub_name, cn.pub_expression, e.pub_name AS kind_name
+              cn.pub_name, cn.pub_expression, cn.pub_delete_disposition,
+              e.pub_name AS kind_name
        FROM contracts_db_constraints cn
        JOIN contracts_primitives_enums e ON cn.ref_kind_enum_guid = e.key_guid
        ORDER BY cn.ref_table_guid, e.pub_value, cn.pub_name
@@ -662,6 +663,21 @@ def _build_create_index(idx: dict, table: dict, idx_columns: list[dict]) -> str:
   )
 
 
+# Maps constraint_disposition enum integer values to the SQL keyword
+# emitted in DDL. Mirrors the enum rows seeded in contracts_primitives_enums:
+#   0 NO_ACTION   -> no clause (engine default)
+#   1 CASCADE
+#   2 SET_NULL    -> 'SET NULL' (space, not underscore, in DDL)
+#   3 SET_DEFAULT -> 'SET DEFAULT'
+# Future: when the enums module exists, this lookup moves there and is
+# resolved by enum value rather than a hardcoded constant.
+_CONSTRAINT_DISPOSITION_DDL: dict[int, str] = {
+  1: 'CASCADE',
+  2: 'SET NULL',
+  3: 'SET DEFAULT',
+}
+
+
 def _build_constraint(con: dict, table: dict, ref_table: dict | None,
                       con_columns: list[dict]) -> str:
   cols = [c for c in con_columns if c['ref_constraint_guid'] == con['key_guid']]
@@ -677,6 +693,16 @@ def _build_constraint(con: dict, table: dict, ref_table: dict | None,
       body = 'FOREIGN KEY (%s) REFERENCES [%s].[%s] (%s)' % (
         src_cols, ref_table['pub_schema'], ref_table['pub_name'], ref_cols
       )
+      # Append ON DELETE clause when an explicit disposition was authored.
+      # The integer value is interpreted against the constraint_disposition
+      # enum (0=NO_ACTION, 1=CASCADE, 2=SET_NULL, 3=SET_DEFAULT). NULL or 0
+      # emits no clause, falling through to the engine default. Future:
+      # this lookup moves into the enums module once it exists.
+      disposition = con.get('pub_delete_disposition')
+      if disposition:
+        clause = _CONSTRAINT_DISPOSITION_DDL.get(disposition)
+        if clause:
+          body += ' ON DELETE %s' % clause
     case 'CHECK':
       body = 'CHECK (%s)' % con['pub_expression']
     case _:
@@ -714,56 +740,12 @@ def _build_table_seed(table_name: str, columns: list[str], rows: list[dict]) -> 
   return '\n'.join(lines) + '\n' + ',\n'.join(vals) + ';'
 
 
-async def _read_column_exclusions(conn) -> list[dict]:
-  """Reads all contracts_db_columns rows where pub_exclude_element = 1,
-  joined to contracts_db_tables for the natural-key context. Used by
-  dump to emit authored override UPDATE statements at the end of the
-  install script, so the flag values survive install -> populate cycles
-  on a fresh database.
-
-  Sort: by table natural key then column name, for deterministic output."""
-  return await _query_json(
-    conn,
-    """SELECT t.pub_schema, t.pub_name AS table_name, c.pub_name AS column_name
-       FROM contracts_db_columns c
-       JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid
-       WHERE c.pub_exclude_element = 1
-       ORDER BY t.pub_schema, t.pub_name, c.pub_name
-       FOR JSON PATH"""
-  )
-
-
-def _build_column_exclusions_update(rows: list[dict]) -> str:
-  """Emits a single UPDATE that sets pub_exclude_element = 1 on every
-  (schema, table, column) tuple in rows. Uses natural-key joins so the
-  emitted SQL doesn't depend on key_guid stability."""
-  if not rows:
-    return ''
-  predicates = []
-  for r in rows:
-    predicates.append(
-      "(t.pub_schema = '%s' AND t.pub_name = '%s' AND c.pub_name = '%s')" % (
-        r['pub_schema'].replace("'", "''"),
-        r['table_name'].replace("'", "''"),
-        r['column_name'].replace("'", "''"),
-      )
-    )
-  return (
-    'UPDATE c\n'
-    '  SET pub_exclude_element = 1\n'
-    '  FROM contracts_db_columns c\n'
-    '  JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid\n'
-    '  WHERE %s;'
-  ) % ('\n     OR '.join(predicates))
-
-
 async def dump(conn, prefix: str = 'schema') -> str:
   print('Reading schema...')
   types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types')
   enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types')
   enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums')
   schema = await _read_schema(conn)
-  column_exclusions = await _read_column_exclusions(conn)
 
   table_by_guid = {t['key_guid']: t for t in schema['tables']}
 
@@ -847,18 +829,6 @@ async def dump(conn, prefix: str = 'schema') -> str:
       continue
     ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
     sections.append(_build_constraint(con, table, ref_table, schema['constraint_columns']))
-
-  # Authored overrides on contracts_db_columns. populate() rebuilds these
-  # rows from sys.* introspection on every run, so any authored flag values
-  # (pub_exclude_element specifically) get reset to column DEFAULT. The
-  # install script needs to re-apply them after populate has run, which on
-  # a fresh install happens during install/materialize. Emitting these at
-  # the end of the dump means the kernel install script restores the
-  # authored state as its final action.
-  if column_exclusions:
-    sections.append('')
-    sections.append('-- Authored overrides: pub_exclude_element on contracts_db_columns')
-    sections.append(_build_column_exclusions_update(column_exclusions))
 
   ts = datetime.now(timezone.utc).strftime('%Y%m%d')
   filename = '%s_%s.sql' % (prefix, ts)
@@ -1371,33 +1341,19 @@ async def list_packages(conn) -> None:
 #   2. ext_ columns: contracts_db_columns rows owned by pkg whose parent
 #      table is NOT owned by the package — emit ALTER TABLE ... DROP COLUMN
 #      after dropping any indexes/FKs that reference the column.
-#   3. Delete owned rows from kernel pkg-aware tables in dependency-safe
-#      order (constraint_columns before constraints, columns before tables,
-#      etc.).
+#   3. DELETE the manifest row. Every kernel table with ref_package_guid has
+#      ON DELETE CASCADE on its FK to service_modules_manifest, so the
+#      database walks the FK graph and removes every package-owned row in
+#      one operation. Junction tables clean themselves via their own
+#      ref_package_guid columns; primitives are foundational and have no
+#      ref_package_guid, so they're never touched.
 #   4. Maintenance pass: sp_updatestats + DBCC FREEPROCCACHE.
-#   5. Delete the manifest row.
 #
 # Default: dry run. Prints the plan and changes nothing.
 # Pass confirm=True to execute.
 #
 # Hard guard: refuses to uninstall the kernel package.
 # =============================================================================
-
-# Order matters. Tables with FKs to the manifest are listed in dependency-
-# safe deletion order: child rows before parent rows.
-_UNINSTALL_TABLE_ORDER = [
-  'contracts_db_constraint_columns',
-  'contracts_db_constraints',
-  'contracts_db_index_columns',
-  'contracts_db_indexes',
-  'contracts_db_columns',
-  'contracts_db_tables',
-  'contracts_db_operations',
-  'contracts_primitives_enums',
-  'contracts_primitives_types',
-  'service_system_configuration',
-]
-
 
 async def _resolve_package(conn, pkg_name: str) -> dict | None:
   rows = await _query_json(
@@ -1415,6 +1371,12 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
        'ext_columns': [{'schema', 'table', 'column', 'column_guid'}, ...],
        'pkg_table_counts': {'contracts_db_columns': N, ...},
      }
+
+  pkg_table_counts is a UI summary only: every package-aware kernel table
+  is enumerated dynamically via _tables_with_package_ref so the result
+  reflects the live schema rather than a hardcoded list. Cascade-on-delete
+  handles the actual cleanup at uninstall time; this function just reports
+  what's there.
   """
   result: dict = {'data_tables': [], 'ext_columns': [], 'pkg_table_counts': {}}
 
@@ -1469,16 +1431,20 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
         'column_guid': r['key_guid'],
       })
 
-  # Counts in each pkg-aware kernel table
-  for tbl in _UNINSTALL_TABLE_ORDER:
+  # Counts per package-aware kernel table — derived from the live schema.
+  pkg_tables = await _tables_with_package_ref(conn)
+  for tbl in pkg_tables:
+    table_name = tbl.split('.', 1)[1]
+    if table_name == 'service_modules_manifest':
+      continue  # don't count the manifest itself
     rows = await _query_json(
       conn,
-      "SELECT COUNT(*) AS n FROM [%s] WHERE ref_package_guid = ? FOR JSON PATH" % tbl,
+      "SELECT COUNT(*) AS n FROM [%s] WHERE ref_package_guid = ? FOR JSON PATH" % table_name,
       (pkg_guid,)
     )
     n = rows[0]['n'] if rows else 0
     if n > 0:
-      result['pkg_table_counts'][tbl] = n
+      result['pkg_table_counts'][table_name] = n
 
   return result
 
@@ -1500,13 +1466,12 @@ def _print_uninstall_plan(pkg: dict, scan: dict) -> None:
       print('    ALTER TABLE [%s].[%s] DROP COLUMN [%s]' % (c['schema'], c['table'], c['column']))
 
   if scan['pkg_table_counts']:
-    print('  Delete owned rows:')
-    for tbl in _UNINSTALL_TABLE_ORDER:
-      if tbl in scan['pkg_table_counts']:
-        print('    %-40s %d' % (tbl, scan['pkg_table_counts'][tbl]))
+    print('  Owned rows in kernel tables (deleted via cascade on manifest):')
+    for tbl in sorted(scan['pkg_table_counts'].keys()):
+      print('    %-40s %d' % (tbl, scan['pkg_table_counts'][tbl]))
 
+  print('  DELETE service_modules_manifest row (cascade cleans up owned rows)')
   print('  Run maintenance pass (sp_updatestats, DBCC FREEPROCCACHE)')
-  print('  Delete service_modules_manifest row')
 
 
 async def _execute_uninstall(conn, pkg: dict, scan: dict) -> None:
@@ -1568,13 +1533,15 @@ async def _execute_uninstall(conn, pkg: dict, scan: dict) -> None:
       raise RuntimeError('failed to drop ext column %s.%s.%s: %s' % (
         c['schema'], c['table'], c['column'], e)) from e
 
-  # Step 3: delete owned rows from kernel pkg-aware tables in dependency order
-  for tbl in _UNINSTALL_TABLE_ORDER:
-    if tbl not in scan['pkg_table_counts']:
-      continue
-    sql = 'DELETE FROM [%s] WHERE ref_package_guid = ?' % tbl
-    n = await _execute(conn, sql, (pkg_guid,))
-    print('    DELETE [%s]: %s row(s)' % (tbl, n))
+  # Step 3: delete the manifest row. ON DELETE CASCADE on every
+  # FK_*_package walks the graph and removes every package-owned row
+  # across the kernel tables in one operation.
+  n = await _execute(
+    conn,
+    'DELETE FROM service_modules_manifest WHERE key_guid = ?',
+    (pkg_guid,)
+  )
+  print('    DELETE service_modules_manifest: %s row(s) (cascade applied)' % n)
 
   # Step 4: maintenance pass
   print('    EXEC sp_updatestats')
@@ -1587,10 +1554,6 @@ async def _execute_uninstall(conn, pkg: dict, scan: dict) -> None:
     await _execute(conn, 'DBCC FREEPROCCACHE')
   except Exception as e:
     print('    (DBCC FREEPROCCACHE failed: %s)' % e)
-
-  # Step 5: delete the manifest row
-  await _execute(conn, 'DELETE FROM service_modules_manifest WHERE key_guid = ?', (pkg_guid,))
-  print('    DELETE service_modules_manifest: 1 row')
 
 
 async def uninstall(conn, pkg_name: str, confirm: bool = False) -> None:
