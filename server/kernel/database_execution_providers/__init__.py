@@ -39,72 +39,39 @@ class BaseDatabaseTransactionProvider(BaseProvider):
 # ----------------------------------------------------------------------------
 # ComposedDatabaseManagementProvider
 # ----------------------------------------------------------------------------
-# Composed provider contract. Borrows the primary provider's handle via
-# DatabaseExecutionModule.get_base_provider(); does not own the connection
-# pool. Three method groups:
+# Composed provider contract. Borrows the primary provider's handle (passed
+# in constructor as self._provider); does not own the connection pool. The
+# transaction provider's query/execute methods are building blocks; this
+# layer composes them into higher-level operations that cannot be expressed
+# as a single cataloged op row.
 #
-#   Schema introspection — live schema reads used by the worker to compute
-#   deltas against declared schema.
+# Two verbs:
 #
-#   DDL emission — forward mutation methods invoked by the worker to apply
-#   declared schema changes.
+#   generate(target, **params) — Composes reads to produce emitted material.
+#   The output is a string, dict, or other artifact: a CREATE TABLE DDL
+#   built from contract rows, a kernel.sql artifact, a seed JSON document,
+#   etc. Does not mutate database state.
 #
-# Capability reporting methods expose engine features that influence how
-# a DDL is emitted.
+#   alter(target, **params) — Composes reads and writes to mutate schema.
+#   The output is a success/rowcount indicator. Examples: applying a
+#   declared schema delta, dropping and rebuilding a constraint, adding
+#   a column with data preservation.
+#
+# Single-statement reads belong in DatabaseOperationsModule as cataloged
+# op rows, not here. This layer exists for multi-statement, decision-tree
+# work whose shape doesn't fit the one-string-in-one-result-out contract.
 # ----------------------------------------------------------------------------
 
 class ComposedDatabaseManagementProvider(ABC):
   def __init__(self, provider: BaseDatabaseTransactionProvider):
     self._provider = provider
 
-  # -- Schema introspection --------------------------------------------------
-
   @abstractmethod
-  async def read_tables(self, schema: str = "dbo") -> list[dict[str, Any]]:
+  async def generate(self, target: str, **params: Any) -> Any:
     pass
 
   @abstractmethod
-  async def read_columns(self, table: str, schema: str = "dbo") -> list[dict[str, Any]]:
-    pass
-
-  @abstractmethod
-  async def read_indexes(self, table: str, schema: str = "dbo") -> list[dict[str, Any]]:
-    pass
-
-  @abstractmethod
-  async def read_constraints(self, table: str, schema: str = "dbo") -> list[dict[str, Any]]:
-    pass
-
-  # -- DDL emission ----------------------------------------------------------
-
-  @abstractmethod
-  async def create_table(self, spec: dict[str, Any]) -> bool:
-    pass
-
-  @abstractmethod
-  async def alter_column(self, table: str, spec: dict[str, Any]) -> bool:
-    pass
-
-  @abstractmethod
-  async def create_index(self, spec: dict[str, Any]) -> bool:
-    pass
-
-  @abstractmethod
-  async def drop_constraint(self, table: str, constraint_name: str) -> bool:
-    pass
-
-  @abstractmethod
-  async def drop_index(self, table: str, index_name: str) -> bool:
-    pass
-
-  # -- Capability reporting --------------------------------------------------
-
-  @abstractmethod
-  def supports_online_index_rebuild(self) -> bool:
-    pass
-
-  @abstractmethod
-  def supports_native_vector(self) -> bool:
+  async def alter(self, target: str, **params: Any) -> Any:
     pass
 
 

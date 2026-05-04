@@ -102,7 +102,7 @@ class DatabaseOperationsModule(BaseModule):
     bootstrap_sql = f"""
       SELECT pub_op, {self._query_column} AS query
       FROM contracts_db_operations
-      WHERE pub_bootstrap = 1 AND {self._query_column} IS NOT NULL
+      WHERE pub_bootstrap_element = 1 AND {self._query_column} IS NOT NULL
       FOR JSON PATH;
     """
     raw = await self._db.query(bootstrap_sql)

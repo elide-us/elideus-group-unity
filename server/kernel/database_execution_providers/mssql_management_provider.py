@@ -11,41 +11,35 @@ class MssqlManagementProvider(ComposedDatabaseManagementProvider):
   def __init__(self, provider: BaseDatabaseTransactionProvider):
     super().__init__(provider)
 
-  # -- Schema introspection --------------------------------------------------
+  async def generate(self, target: str, **params: Any) -> Any:
+    match target:
+      case "create_table":
+        return await self._generate_create_table(params["table"])
+      case _:
+        logger.error("Unknown generate target '%s'", target)
+        return None
 
-  async def read_tables(self, schema: str = "dbo") -> list[dict[str, Any]]:
-    return []
+  async def alter(self, target: str, **params: Any) -> Any:
+    logger.error("alter target '%s' not implemented", target)
+    return None
 
-  async def read_columns(self, table: str, schema: str = "dbo") -> list[dict[str, Any]]:
-    return []
-
-  async def read_indexes(self, table: str, schema: str = "dbo") -> list[dict[str, Any]]:
-    return []
-
-  async def read_constraints(self, table: str, schema: str = "dbo") -> list[dict[str, Any]]:
-    return []
-
-  # -- DDL emission ----------------------------------------------------------
-
-  async def create_table(self, spec: dict[str, Any]) -> bool:
-    return False
-
-  async def alter_column(self, table: str, spec: dict[str, Any]) -> bool:
-    return False
-
-  async def create_index(self, spec: dict[str, Any]) -> bool:
-    return False
-
-  async def drop_constraint(self, table: str, constraint_name: str) -> bool:
-    return False
-
-  async def drop_index(self, table: str, index_name: str) -> bool:
-    return False
-
-  # -- Capability reporting --------------------------------------------------
-
-  def supports_online_index_rebuild(self) -> bool:
-    return True
-
-  def supports_native_vector(self) -> bool:
-    return True
+  async def _generate_create_table(self, table: str) -> Any:
+    sql = """SELECT
+         s.name AS pub_schema,
+         t.name AS pub_table,
+         c.name AS pub_name,
+         ty.name AS sys_type,
+         c.max_length AS sys_max_length,
+         c.precision AS sys_precision,
+         c.scale AS sys_scale,
+         c.is_nullable AS pub_is_nullable,
+         c.is_identity AS sys_is_identity,
+         c.column_id AS pub_ordinal,
+         OBJECT_DEFINITION(c.default_object_id) AS pub_default_value
+       FROM sys.columns c
+       JOIN sys.tables t ON c.object_id = t.object_id
+       JOIN sys.schemas s ON t.schema_id = s.schema_id
+       JOIN sys.types ty ON c.user_type_id = ty.user_type_id
+       WHERE t.name = ?
+       FOR JSON PATH, INCLUDE_NULL_VALUES"""
+    return await self._provider.query(sql, (table,))

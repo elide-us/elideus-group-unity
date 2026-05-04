@@ -956,7 +956,7 @@ async def _read_seed_column_projection(conn, table_guid: str) -> list[str]:
   )
   return [r['pub_name'] for r in rows]
 
-async def generate_seed(conn, path: str,
+async def generate_seed(conn, prefix: str = 'kernel_seed',
                         package: str = 'kernel',
                         version: str = '1.0.0') -> None:
   """Read seed-flagged rows from contracts_db_*, emit as a seed JSON file."""
@@ -994,10 +994,12 @@ async def generate_seed(conn, path: str,
     'rows': rows,
   }
 
-  with open(path, 'w') as f:
+  ts = datetime.now(timezone.utc).strftime('%Y%m%d')
+  filename = '%s_%s.json' % (prefix, ts)
+  with open(filename, 'w') as f:
     json.dump(package_doc, f, indent=2)
 
-  print('Generated seed: %s' % path)
+  print('Generated seed: %s' % filename)
   print('  package: %s v%s' % (package, version))
   for t in seed_tables:
     print('  %-40s %d' % (t['pub_name'], counts[t['pub_name']]))
