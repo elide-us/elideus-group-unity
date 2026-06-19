@@ -42,6 +42,18 @@ async def connect(dbname: str | None = None):
 
 NS_HASH = uuid.UUID(os.getenv('NS_HASH', 'DECAFBAD-CAFE-FADE-BABE-C0FFEE420DAB'))
 
+# Schema the kernel cluster physically lives in (contracts_db_*,
+# contracts_primitives_*, service_modules_manifest). Bare table references
+# would otherwise resolve to the login's default schema (dbo); everything
+# here is addressed through this schema instead. Override via env for the
+# legacy layout, e.g. KERNEL_SCHEMA=dbo.
+KERNEL_SCHEMA = os.getenv('KERNEL_SCHEMA', 'etg')
+
+
+def _kt(name: str) -> str:
+  """Schema-qualified kernel table reference, e.g. [etg].[contracts_db_tables]."""
+  return '[%s].[%s]' % (KERNEL_SCHEMA, name)
+
 
 def _guid(entity_type: str, natural_key: str) -> str:
   return str(uuid.uuid5(NS_HASH, '%s:%s' % (entity_type, natural_key))).upper()
@@ -84,13 +96,13 @@ async def _merge(conn, table: str, key_column: str, values: dict) -> None:
   col_list = ', '.join('[%s]' % c for c in cols)
   update_set = ', '.join('T.[%s] = S.[%s]' % (c, c) for c in cols if c != key_column)
   sql = (
-    'MERGE INTO [%(table)s] AS T '
+    'MERGE INTO %(table)s AS T '
     'USING (SELECT %(placeholders)s) AS S (%(col_list)s) '
     'ON T.[%(key)s] = S.[%(key)s] '
     'WHEN MATCHED THEN UPDATE SET %(update_set)s '
     'WHEN NOT MATCHED THEN INSERT (%(col_list)s) VALUES (%(values_list)s);'
   ) % {
-    'table': table,
+    'table': _kt(table),
     'placeholders': placeholders,
     'col_list': col_list,
     'key': key_column,
@@ -168,7 +180,7 @@ async def _load_type_lookup(conn) -> tuple[dict[str, str], dict[str, str]]:
   """
   rows = await _query_json(
     conn,
-    "SELECT pub_name, pub_mssql_sys_type, key_guid FROM contracts_primitives_types FOR JSON PATH, INCLUDE_NULL_VALUES"
+    f"SELECT pub_name, pub_mssql_sys_type, key_guid FROM {_kt('contracts_primitives_types')} FOR JSON PATH, INCLUDE_NULL_VALUES"
   )
   base_to_name: dict[str, str] = {}
   name_to_guid: dict[str, str] = {}
@@ -374,9 +386,9 @@ async def _populate_index_columns(conn, index_guids: dict[str, str], column_guid
 async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, str]:
   enum_rows = await _query_json(
     conn,
-    """SELECT e.pub_name, e.key_guid
-       FROM contracts_primitives_enums e
-       JOIN contracts_primitives_enum_types et ON e.ref_enum_type_guid = et.key_guid
+    f"""SELECT e.pub_name, e.key_guid
+       FROM {_kt('contracts_primitives_enums')} e
+       JOIN {_kt('contracts_primitives_enum_types')} et ON e.ref_enum_type_guid = et.key_guid
        WHERE et.pub_name = 'constraint_kind'
        FOR JSON PATH"""
   )
@@ -537,7 +549,7 @@ async def _read_table_projection(conn, table_name: str) -> tuple[list[str], list
   columns in their pub_ordinal order. Same rule as generate_seed."""
   table_row = await _query_json(
     conn,
-    "SELECT key_guid FROM contracts_db_tables WHERE pub_name = ? FOR JSON PATH",
+    f"SELECT key_guid FROM {_kt('contracts_db_tables')} WHERE pub_name = ? FOR JSON PATH",
     (table_name,)
   )
   if not table_row:
@@ -551,9 +563,9 @@ async def _read_table_projection(conn, table_name: str) -> tuple[list[str], list
   order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
   select_list = ', '.join(columns)
   sql = (
-    'SELECT %s FROM [%s] ORDER BY %s '
+    'SELECT %s FROM %s ORDER BY %s '
     'FOR JSON PATH, INCLUDE_NULL_VALUES'
-  ) % (select_list, table_name, order_by)
+  ) % (select_list, _kt(table_name), order_by)
   rows = await _query_json(conn, sql)
   return (columns, rows)
 
@@ -561,55 +573,55 @@ async def _read_table_projection(conn, table_name: str) -> tuple[list[str], list
 async def _read_schema(conn) -> dict:
   tables = await _query_json(
     conn,
-    """SELECT key_guid, pub_name, pub_schema, pub_alias
-       FROM contracts_db_tables
+    f"""SELECT key_guid, pub_name, pub_schema, pub_alias
+       FROM {_kt('contracts_db_tables')}
        ORDER BY pub_schema, pub_name
        FOR JSON PATH"""
   )
   columns = await _query_json(
     conn,
-    """SELECT c.key_guid, c.ref_table_guid, c.pub_name, c.pub_ordinal,
+    f"""SELECT c.key_guid, c.ref_table_guid, c.pub_name, c.pub_ordinal,
               c.pub_is_nullable, c.pub_default_value, c.pub_max_length,
               t.pub_mssql_type, t.pub_default_length, t.pub_name AS type_name,
               t.pub_emits_length
-       FROM contracts_db_columns c
-       JOIN contracts_primitives_types t ON c.ref_type_guid = t.key_guid
+       FROM {_kt('contracts_db_columns')} c
+       JOIN {_kt('contracts_primitives_types')} t ON c.ref_type_guid = t.key_guid
        ORDER BY c.ref_table_guid, c.pub_ordinal
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
   indexes = await _query_json(
     conn,
-    """SELECT key_guid, ref_table_guid, pub_name, pub_is_unique
-       FROM contracts_db_indexes
+    f"""SELECT key_guid, ref_table_guid, pub_name, pub_is_unique
+       FROM {_kt('contracts_db_indexes')}
        ORDER BY ref_table_guid, pub_name
        FOR JSON PATH"""
   )
   index_columns = await _query_json(
     conn,
-    """SELECT ic.ref_index_guid, ic.pub_ordinal, c.pub_name AS column_name
-       FROM contracts_db_index_columns ic
-       JOIN contracts_db_columns c ON ic.ref_column_guid = c.key_guid
+    f"""SELECT ic.ref_index_guid, ic.pub_ordinal, c.pub_name AS column_name
+       FROM {_kt('contracts_db_index_columns')} ic
+       JOIN {_kt('contracts_db_columns')} c ON ic.ref_column_guid = c.key_guid
        ORDER BY ic.ref_index_guid, ic.pub_ordinal
        FOR JSON PATH"""
   )
   constraints = await _query_json(
     conn,
-    """SELECT cn.key_guid, cn.ref_table_guid, cn.ref_referenced_table_guid,
+    f"""SELECT cn.key_guid, cn.ref_table_guid, cn.ref_referenced_table_guid,
               cn.pub_name, cn.pub_expression, cn.pub_delete_disposition,
               e.pub_name AS kind_name
-       FROM contracts_db_constraints cn
-       JOIN contracts_primitives_enums e ON cn.ref_kind_enum_guid = e.key_guid
+       FROM {_kt('contracts_db_constraints')} cn
+       JOIN {_kt('contracts_primitives_enums')} e ON cn.ref_kind_enum_guid = e.key_guid
        ORDER BY cn.ref_table_guid, e.pub_value, cn.pub_name
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
   constraint_columns = await _query_json(
     conn,
-    """SELECT cc.ref_constraint_guid, cc.pub_ordinal,
+    f"""SELECT cc.ref_constraint_guid, cc.pub_ordinal,
               c.pub_name AS column_name,
               rc.pub_name AS ref_column_name
-       FROM contracts_db_constraint_columns cc
-       JOIN contracts_db_columns c ON cc.ref_column_guid = c.key_guid
-       LEFT JOIN contracts_db_columns rc ON cc.ref_referenced_column_guid = rc.key_guid
+       FROM {_kt('contracts_db_constraint_columns')} cc
+       JOIN {_kt('contracts_db_columns')} c ON cc.ref_column_guid = c.key_guid
+       LEFT JOIN {_kt('contracts_db_columns')} rc ON cc.ref_referenced_column_guid = rc.key_guid
        ORDER BY cc.ref_constraint_guid, cc.pub_ordinal
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
@@ -731,7 +743,7 @@ def _build_table_seed(table_name: str, columns: list[str], rows: list[dict]) -> 
   if not rows:
     return ''
   col_list = ', '.join(columns)
-  lines = ['INSERT INTO [dbo].[%s]' % table_name,
+  lines = ['INSERT INTO %s' % _kt(table_name),
            '  (%s)' % col_list,
            'VALUES']
   vals = []
@@ -933,8 +945,8 @@ async def _read_seed_table_list(conn) -> list[dict]:
   """Returns seed-flagged tables ordered by their install-order ordinal."""
   return await _query_json(
     conn,
-    """SELECT key_guid, pub_name, pub_seed_element
-       FROM contracts_db_tables
+    f"""SELECT key_guid, pub_name, pub_seed_element
+       FROM {_kt('contracts_db_tables')}
        WHERE pub_seed_element > 0
        ORDER BY pub_seed_element
        FOR JSON PATH"""
@@ -946,8 +958,8 @@ async def _read_seed_column_projection(conn, table_guid: str) -> list[str]:
   order. Excludes columns flagged with pub_exclude_element = 1."""
   rows = await _query_json(
     conn,
-    """SELECT pub_name
-       FROM contracts_db_columns
+    f"""SELECT pub_name
+       FROM {_kt('contracts_db_columns')}
        WHERE ref_table_guid = ?
          AND pub_exclude_element = 0
        ORDER BY pub_ordinal
@@ -980,9 +992,9 @@ async def generate_seed(conn, prefix: str = 'kernel_seed',
 
     select_list = ', '.join(columns)
     sql = (
-      'SELECT %s FROM [%s] ORDER BY %s '
+      'SELECT %s FROM %s ORDER BY %s '
       'FOR JSON PATH, INCLUDE_NULL_VALUES'
-    ) % (select_list, table_name, order_by)
+    ) % (select_list, _kt(table_name), order_by)
     table_rows = await _query_json(conn, sql)
     for row in table_rows:
       rows.append({'table': table_name, 'data': row})
@@ -1062,10 +1074,11 @@ async def _table_has_package_column(conn, table: str) -> bool:
     return _PACKAGE_COL_CACHE[table]
   rows = await _query_json(
     conn,
-    """SELECT 1 AS ok
+    f"""SELECT 1 AS ok
        FROM sys.columns c
        JOIN sys.tables t ON c.object_id = t.object_id
-       WHERE t.name = ? AND c.name = 'ref_package_guid'
+       JOIN sys.schemas s ON t.schema_id = s.schema_id
+       WHERE t.name = ? AND s.name = '{KERNEL_SCHEMA}' AND c.name = 'ref_package_guid'
        FOR JSON PATH""",
     (table,)
   )
@@ -1265,7 +1278,7 @@ async def install(conn, path: str) -> None:
   try:
     await _execute(
       conn,
-      'UPDATE service_modules_manifest SET pub_is_sealed = 1 WHERE key_guid = ?',
+      'UPDATE %s SET pub_is_sealed = 1 WHERE key_guid = ?' % _kt('service_modules_manifest'),
       (manifest_guid,)
     )
     print('    %s v%s sealed' % (pkg_name, pkg_version))
@@ -1285,11 +1298,11 @@ async def _tables_with_package_ref(conn) -> list[str]:
   column. Determined at runtime so the list isn't hardcoded."""
   rows = await _query_json(
     conn,
-    """SELECT s.name AS pub_schema, t.name AS pub_name
+    f"""SELECT s.name AS pub_schema, t.name AS pub_name
        FROM sys.tables t
        JOIN sys.schemas s ON t.schema_id = s.schema_id
        JOIN sys.columns c ON c.object_id = t.object_id
-       WHERE c.name = 'ref_package_guid'
+       WHERE c.name = 'ref_package_guid' AND s.name = '{KERNEL_SCHEMA}'
        ORDER BY s.name, t.name
        FOR JSON PATH"""
   )
@@ -1303,8 +1316,8 @@ async def _tables_with_package_ref(conn) -> list[str]:
 async def list_packages(conn) -> None:
   manifest = await _query_json(
     conn,
-    """SELECT key_guid, pub_name, pub_version, pub_is_sealed
-       FROM service_modules_manifest
+    f"""SELECT key_guid, pub_name, pub_version, pub_is_sealed
+       FROM {_kt('service_modules_manifest')}
        ORDER BY pub_name
        FOR JSON PATH"""
   )
@@ -1314,10 +1327,10 @@ async def list_packages(conn) -> None:
   pkg_tables = await _tables_with_package_ref(conn)
   ownership: dict[str, dict[str, int]] = {}  # pkg_guid -> {table -> count}
   for tbl in pkg_tables:
-    table_name = tbl.split('.', 1)[1]
+    schema_name, table_name = tbl.split('.', 1)
     rows = await _query_json(
       conn,
-      "SELECT ref_package_guid AS pkg, COUNT(*) AS n FROM [%s] WHERE ref_package_guid IS NOT NULL GROUP BY ref_package_guid FOR JSON PATH" % table_name
+      "SELECT ref_package_guid AS pkg, COUNT(*) AS n FROM [%s].[%s] WHERE ref_package_guid IS NOT NULL GROUP BY ref_package_guid FOR JSON PATH" % (schema_name, table_name)
     )
     for r in rows:
       ownership.setdefault(r['pkg'].upper(), {})[tbl] = r['n']
@@ -1360,7 +1373,7 @@ async def list_packages(conn) -> None:
 async def _resolve_package(conn, pkg_name: str) -> dict | None:
   rows = await _query_json(
     conn,
-    "SELECT key_guid, pub_name, pub_version, pub_is_sealed FROM service_modules_manifest WHERE pub_name = ? FOR JSON PATH",
+    f"SELECT key_guid, pub_name, pub_version, pub_is_sealed FROM {_kt('service_modules_manifest')} WHERE pub_name = ? FOR JSON PATH",
     (pkg_name,)
   )
   return rows[0] if rows else None
@@ -1385,7 +1398,7 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
   # Tables owned by the package
   owned_tables = await _query_json(
     conn,
-    "SELECT key_guid, pub_schema, pub_name FROM contracts_db_tables WHERE ref_package_guid = ? FOR JSON PATH",
+    f"SELECT key_guid, pub_schema, pub_name FROM {_kt('contracts_db_tables')} WHERE ref_package_guid = ? FOR JSON PATH",
     (pkg_guid,)
   )
   owned_table_guids = {t['key_guid'].upper() for t in owned_tables}
@@ -1416,10 +1429,10 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
   # ext_ columns: contracts_db_columns rows owned by pkg but parent table isn't owned
   ext_rows = await _query_json(
     conn,
-    """SELECT c.key_guid, c.pub_name AS column_name, c.ref_table_guid,
+    f"""SELECT c.key_guid, c.pub_name AS column_name, c.ref_table_guid,
               t.pub_schema, t.pub_name AS table_name
-       FROM contracts_db_columns c
-       JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid
+       FROM {_kt('contracts_db_columns')} c
+       JOIN {_kt('contracts_db_tables')} t ON c.ref_table_guid = t.key_guid
        WHERE c.ref_package_guid = ?
        FOR JSON PATH""",
     (pkg_guid,)
@@ -1436,12 +1449,12 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
   # Counts per package-aware kernel table — derived from the live schema.
   pkg_tables = await _tables_with_package_ref(conn)
   for tbl in pkg_tables:
-    table_name = tbl.split('.', 1)[1]
+    schema_name, table_name = tbl.split('.', 1)
     if table_name == 'service_modules_manifest':
       continue  # don't count the manifest itself
     rows = await _query_json(
       conn,
-      "SELECT COUNT(*) AS n FROM [%s] WHERE ref_package_guid = ? FOR JSON PATH" % table_name,
+      "SELECT COUNT(*) AS n FROM [%s].[%s] WHERE ref_package_guid = ? FOR JSON PATH" % (schema_name, table_name),
       (pkg_guid,)
     )
     n = rows[0]['n'] if rows else 0
@@ -1540,7 +1553,7 @@ async def _execute_uninstall(conn, pkg: dict, scan: dict) -> None:
   # across the kernel tables in one operation.
   n = await _execute(
     conn,
-    'DELETE FROM service_modules_manifest WHERE key_guid = ?',
+    'DELETE FROM %s WHERE key_guid = ?' % _kt('service_modules_manifest'),
     (pkg_guid,)
   )
   print('    DELETE service_modules_manifest: %s row(s) (cascade applied)' % n)

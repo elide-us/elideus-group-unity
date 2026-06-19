@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-from scriptlib import connect, dump, install, list_packages, uninstall, generate_seed
+from scriptlib import connect, dump, install, list_packages, uninstall, generate_seed, populate
 
 
 HELP_TEXT = """\
@@ -9,6 +9,7 @@ Available commands:
   help                          Show this help message
   exit, quit                    Exit the console
   reconnect <dbname>            Connect to a different database
+  populate                      Reflect sys.* into contracts_db_* (fill kernel tables)
   generate kernel [name]        Read contracts_db_*, write <name>_YYYYMMDD.sql
   generate seed [name]          Read kernel rows from contracts_db_*, write <name>_YYYYMMDD.json
   install <file>                Run package install pipeline (register → schema → materialize → data → seal)
@@ -37,6 +38,11 @@ async def interactive_console(conn):
           conn = await connect(dbname)
         except Exception as e:
           print('Error reconnecting: %s' % e)
+      case ['populate']:
+        try:
+          await populate(conn)
+        except Exception as e:
+          print('Error populating: %s' % e)
       case ['generate', 'kernel']:
         try:
           await dump(conn)
