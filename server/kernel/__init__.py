@@ -169,12 +169,13 @@ class BaseModule(ABC):
     await self._sealed_event.wait()
 
   @property
-  def module_manager(self) -> "ModuleManager":
+  def module_manager(self) -> "KernelModuleManager":
     return self.app.state.module_manager
 
   def get_module(self, module_type: Type[T]) -> T:
     return self.module_manager._get_module(module_type)
 
-
-from .module_manager import ModuleManager
-__all__ = ["ModuleManager"]
+# This late import is required to resolve the circlar dependency 
+# between the KernelModuleManager and the Kernel re-export
+from .kernel_module_manager import KernelModuleManager
+__all__ = ["KernelModuleManager"]
