@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-from scriptlib import connect, populate, dump, apply, install_seed, install, list_packages, uninstall, generate_seed
+from scriptlib import connect, dump, install, list_packages, uninstall, generate_seed
 
 
 HELP_TEXT = """\
@@ -9,11 +9,8 @@ Available commands:
   help                          Show this help message
   exit, quit                    Exit the console
   reconnect <dbname>            Connect to a different database
-  populate                      Introspect database, write contracts_db_* rows
-  dump [name]                   Read contracts_db_*, write <name>_YYYYMMDD.sql
-  install seed <file>           Read JSON package, MERGE rows into target tables
-  generate seed <file>          Read kernel rows from contracts_db_*, write JSON seed to <file>
-  apply <file>                  Execute the named .sql against the database
+  generate kernel [name]        Read contracts_db_*, write <name>_YYYYMMDD.sql
+  generate seed [name]          Read kernel rows from contracts_db_*, write <name>_YYYYMMDD.json
   install <file>                Run package install pipeline (register → schema → materialize → data → seal)
   list packages                 Show installed packages and row ownership
   uninstall <name>              Show uninstall plan (dry run)
@@ -40,34 +37,24 @@ async def interactive_console(conn):
           conn = await connect(dbname)
         except Exception as e:
           print('Error reconnecting: %s' % e)
-      case ['populate']:
-        try:
-          await populate(conn)
-        except Exception as e:
-          print('Error populating: %s' % e)
-      case ['dump']:
+      case ['generate', 'kernel']:
         try:
           await dump(conn)
         except Exception as e:
-          print('Error dumping: %s' % e)
-      case ['dump', name]:
+          print('Error generating kernel: %s' % e)
+      case ['generate', 'kernel', name]:
         try:
           await dump(conn, name)
         except Exception as e:
-          print('Error dumping: %s' % e)
-      case ['apply', path]:
+          print('Error generating kernel: %s' % e)
+      case ['generate', 'seed']:
         try:
-          await apply(conn, path)
+          await generate_seed(conn)
         except Exception as e:
-          print('Error applying: %s' % e)
-      case ['install', 'seed', path]:
+          print('Error generating seed: %s' % e)
+      case ['generate', 'seed', name]:
         try:
-          await install_seed(conn, path)
-        except Exception as e:
-          print('Error installing seed: %s' % e)
-      case ['generate', 'seed', path]:
-        try:
-          await generate_seed(conn, path)
+          await generate_seed(conn, name)
         except Exception as e:
           print('Error generating seed: %s' % e)
       case ['install', path]:

@@ -1,4 +1,4 @@
--- Generated 2026-04-29 22:02:47 UTC
+-- Generated 2026-04-30 17:42:15 UTC
 SET ANSI_NULLS ON;
 GO
 SET QUOTED_IDENTIFIER ON;
@@ -50,10 +50,6 @@ VALUES
   ('F4CF3C0D-908E-5682-8FE7-F9973B90C56A', 'VECTOR', 'VECTOR', 'vector', 'vector', 'list[float]', 'number[]', 'array', -10, NULL, 'Vector embedding. Dimension count via pub_max_length. MSSQL/Azure SQL native; Postgres via pgvector; MySQL 9.0+ native.', 'vector', 1);
 GO
 
-
-
-
-
 -- =====================================================================
 -- Generative section
 -- =====================================================================
@@ -91,6 +87,16 @@ CREATE TABLE [dbo].[contracts_db_constraints] (
   [pub_name] NVARCHAR(256) NOT NULL,
   [pub_expression] NVARCHAR(MAX) NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [pub_delete_disposition] TINYINT NULL
+);
+CREATE TABLE [dbo].[contracts_db_engines] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_name] NVARCHAR(64) NOT NULL,
+  [pub_value] TINYINT NOT NULL,
+  [pub_notes] NVARCHAR(512) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
 );
 CREATE TABLE [dbo].[contracts_db_index_columns] (
@@ -121,7 +127,31 @@ CREATE TABLE [dbo].[contracts_db_operations] (
   [pub_bootstrap_element] BIT DEFAULT (0) NOT NULL,
   [pub_notes] NVARCHAR(512) NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [ref_input_model_guid] UNIQUEIDENTIFIER NULL,
+  [ref_output_model_guid] UNIQUEIDENTIFIER NULL
+);
+CREATE TABLE [dbo].[contracts_db_operations_models] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_name] NVARCHAR(128) NOT NULL,
+  [pub_notes] NVARCHAR(512) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
+CREATE TABLE [dbo].[contracts_db_operations_models_fields] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_model_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_type_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_name] NVARCHAR(128) NOT NULL,
+  [pub_ordinal] INT NOT NULL,
+  [pub_is_nullable] BIT DEFAULT (0) NOT NULL,
+  [pub_default_value] NVARCHAR(512) NULL,
+  [pub_max_length] INT NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [pub_exclude_element] BIT DEFAULT (0) NOT NULL
 );
 CREATE TABLE [dbo].[contracts_db_tables] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
@@ -132,6 +162,15 @@ CREATE TABLE [dbo].[contracts_db_tables] (
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [pub_seed_element] TINYINT DEFAULT (0) NOT NULL
+);
+CREATE TABLE [dbo].[contracts_enums_ddl_mapping] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [ref_enum_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_engine_guid] UNIQUEIDENTIFIER NOT NULL,
+  [pub_ddl_token] NVARCHAR(128) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
 );
 CREATE TABLE [dbo].[contracts_primitives_enum_types] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
@@ -146,6 +185,15 @@ CREATE TABLE [dbo].[contracts_primitives_enums] (
   [pub_name] NVARCHAR(128) NOT NULL,
   [pub_value] TINYINT NOT NULL,
   [pub_notes] NVARCHAR(512) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
+CREATE TABLE [dbo].[contracts_types_ddl_mapping] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [ref_type_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_engine_guid] UNIQUEIDENTIFIER NOT NULL,
+  [pub_ddl_token] NVARCHAR(128) NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
 );
@@ -172,66 +220,61 @@ INSERT INTO [dbo].[contracts_primitives_enum_types]
   (key_guid, pub_name, pub_notes)
 VALUES
   ('4BE7C586-9847-5925-90A3-5071D8228F26', 'constraint_kind', 'Database constraint kinds: PRIMARY_KEY, FOREIGN_KEY, UNIQUE, CHECK.'),
-  ('F5539B3E-417C-5A95-BF9B-592B97369B40', 'schema_source', 'Origin of a generated schema view: PRIMARY (live introspection) or GENERATED (from contracts_db_* rows).');
+  ('F5539B3E-417C-5A95-BF9B-592B97369B40', 'schema_source', 'Origin of a generated schema view: PRIMARY (live introspection) or GENERATED (from contracts_db_* rows).'),
+  ('89BF8DE1-413E-582E-8D15-9629A883F6DA', 'constraint_disposition', 'Referential action for FK constraints: NO_ACTION (engine default), CASCADE, SET_NULL, SET_DEFAULT. Engine-specific DDL tokens live in contracts_enums_ddl_mapping.');
 
 -- contracts_primitives_enums seed
 INSERT INTO [dbo].[contracts_primitives_enums]
   (key_guid, ref_enum_type_guid, pub_name, pub_value, pub_notes)
 VALUES
+  ('57F37618-1A3E-5D30-88CB-095E1DC91492', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'NO_ACTION', 0, 'Engine default. No clause emitted.'),
   ('E3C5DACB-6027-515A-8FED-489D71869C86', 'F5539B3E-417C-5A95-BF9B-592B97369B40', 'PRIMARY', 0, 'Live database schema introspected via the engine catalog (sys.* / INFORMATION_SCHEMA).'),
   ('3426C194-B912-5F71-802F-566E2FF1E8FF', '4BE7C586-9847-5925-90A3-5071D8228F26', 'PRIMARY_KEY', 0, 'Primary key constraint. One per table. Columns via constraint_columns junction.'),
+  ('59C1933F-C216-5F32-A7C9-70A883287B8D', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'CASCADE', 1, 'Delete or update of parent triggers same operation on children.'),
+  ('BA9F914F-A591-512D-B2DF-B5C84D64C474', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'SET_DEFAULT', 3, 'Child FK columns set to their column DEFAULT on parent delete/update.'),
   ('4D75333D-E472-5813-A03B-C0162671A00D', '4BE7C586-9847-5925-90A3-5071D8228F26', 'UNIQUE', 2, 'Unique constraint. Columns via constraint_columns junction.'),
+  ('36DD290B-4606-5810-843E-CF324B66F504', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'SET_NULL', 2, 'Child FK columns set to NULL on parent delete/update. Child column must be nullable.'),
   ('92400F11-FCFD-5285-B9E2-D682B2496A88', '4BE7C586-9847-5925-90A3-5071D8228F26', 'CHECK', 3, 'Check constraint. pub_expression on the constraint row holds the predicate.'),
   ('B6ABA725-1FDB-5454-B164-DDBE11079598', '4BE7C586-9847-5925-90A3-5071D8228F26', 'FOREIGN_KEY', 1, 'Foreign key constraint. Source and target columns via constraint_columns junction.'),
   ('04B28DA7-E20C-5AEE-8E2A-F8FE79ADCF07', 'F5539B3E-417C-5A95-BF9B-592B97369B40', 'GENERATED', 1, 'Declared schema generated from contracts_db_* rows.');
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 -- Indexes
 CREATE INDEX [IX_cdic_index_guid] ON [dbo].[contracts_db_index_columns] ([ref_index_guid]);
 CREATE INDEX [IX_cdcc_constraint_guid] ON [dbo].[contracts_db_constraint_columns] ([ref_constraint_guid]);
+CREATE INDEX [IX_ctddm_engine_guid] ON [dbo].[contracts_types_ddl_mapping] ([ref_engine_guid]);
+CREATE INDEX [IX_ctddm_type_guid] ON [dbo].[contracts_types_ddl_mapping] ([ref_type_guid]);
+CREATE INDEX [IX_ceddm_engine_guid] ON [dbo].[contracts_enums_ddl_mapping] ([ref_engine_guid]);
+CREATE INDEX [IX_ceddm_enum_guid] ON [dbo].[contracts_enums_ddl_mapping] ([ref_enum_guid]);
 CREATE INDEX [IX_cdcn_kind] ON [dbo].[contracts_db_constraints] ([ref_kind_enum_guid]);
 CREATE INDEX [IX_cdcn_table_guid] ON [dbo].[contracts_db_constraints] ([ref_table_guid]);
 CREATE INDEX [IX_cdc_table_guid] ON [dbo].[contracts_db_columns] ([ref_table_guid]);
 CREATE INDEX [IX_cdc_type_guid] ON [dbo].[contracts_db_columns] ([ref_type_guid]);
 CREATE INDEX [IX_cdi_table_guid] ON [dbo].[contracts_db_indexes] ([ref_table_guid]);
+CREATE INDEX [IX_cdomf_model_guid] ON [dbo].[contracts_db_operations_models_fields] ([ref_model_guid]);
+CREATE INDEX [IX_cdomf_type_guid] ON [dbo].[contracts_db_operations_models_fields] ([ref_type_guid]);
 
 -- Constraints (PK, UNIQUE, CHECK)
 ALTER TABLE [dbo].[service_modules_manifest] ADD CONSTRAINT [PK_service_modules_manifest] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[service_modules_manifest] ADD CONSTRAINT [UQ_smm_name] UNIQUE ([pub_name]);
 ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [PK_contracts_db_index_columns] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [UQ_cdic_index_column] UNIQUE ([ref_index_guid], [ref_column_guid]);
+ALTER TABLE [dbo].[contracts_db_engines] ADD CONSTRAINT [PK_contracts_db_engines] PRIMARY KEY ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_engines] ADD CONSTRAINT [UQ_cde_name] UNIQUE ([pub_name]);
+ALTER TABLE [dbo].[contracts_db_engines] ADD CONSTRAINT [UQ_cde_value] UNIQUE ([pub_value]);
 ALTER TABLE [dbo].[contracts_db_tables] ADD CONSTRAINT [PK_contracts_db_tables] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_tables] ADD CONSTRAINT [UQ_cdt_alias] UNIQUE ([pub_alias]);
 ALTER TABLE [dbo].[contracts_db_tables] ADD CONSTRAINT [UQ_cdt_schema_name] UNIQUE ([pub_schema], [pub_name]);
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [PK_contracts_db_constraint_columns] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [UQ_cdcc_constraint_column] UNIQUE ([ref_constraint_guid], [ref_column_guid]);
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [UQ_cdcc_constraint_ordinal] UNIQUE ([ref_constraint_guid], [pub_ordinal]);
+ALTER TABLE [dbo].[contracts_db_operations_models] ADD CONSTRAINT [PK_contracts_db_operations_models] PRIMARY KEY ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations_models] ADD CONSTRAINT [UQ_cdom_name] UNIQUE ([pub_name]);
 ALTER TABLE [dbo].[contracts_primitives_enum_types] ADD CONSTRAINT [PK_contracts_primitives_enum_types] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_primitives_enum_types] ADD CONSTRAINT [UQ_cpet_name] UNIQUE ([pub_name]);
+ALTER TABLE [dbo].[contracts_types_ddl_mapping] ADD CONSTRAINT [PK_contracts_types_ddl_mapping] PRIMARY KEY ([key_guid]);
+ALTER TABLE [dbo].[contracts_types_ddl_mapping] ADD CONSTRAINT [UQ_ctddm_type_engine] UNIQUE ([ref_type_guid], [ref_engine_guid]);
+ALTER TABLE [dbo].[contracts_enums_ddl_mapping] ADD CONSTRAINT [PK_contracts_enums_ddl_mapping] PRIMARY KEY ([key_guid]);
+ALTER TABLE [dbo].[contracts_enums_ddl_mapping] ADD CONSTRAINT [UQ_ceddm_enum_engine] UNIQUE ([ref_enum_guid], [ref_engine_guid]);
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [PK_contracts_db_constraints] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [UQ_cdcn_table_name] UNIQUE ([ref_table_guid], [pub_name]);
 ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [PK_contracts_db_columns] PRIMARY KEY ([key_guid]);
@@ -242,6 +285,9 @@ ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [UQ_cdi_table_name] UNIQ
 ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [PK_contracts_primitives_enums] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [UQ_cpe_type_name] UNIQUE ([ref_enum_type_guid], [pub_name]);
 ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [UQ_cpe_type_value] UNIQUE ([ref_enum_type_guid], [pub_value]);
+ALTER TABLE [dbo].[contracts_db_operations_models_fields] ADD CONSTRAINT [PK_contracts_db_operations_models_fields] PRIMARY KEY ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations_models_fields] ADD CONSTRAINT [UQ_cdomf_model_name] UNIQUE ([ref_model_guid], [pub_name]);
+ALTER TABLE [dbo].[contracts_db_operations_models_fields] ADD CONSTRAINT [UQ_cdomf_model_ordinal] UNIQUE ([ref_model_guid], [pub_ordinal]);
 ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [PK_contracts_db_operations] PRIMARY KEY ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [UQ_cdo_op] UNIQUE ([pub_op]);
 ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [PK_system_configuration] PRIMARY KEY ([key_guid]);
@@ -250,20 +296,33 @@ ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [UQ_sc_key] UNIQ
 -- Constraints (FOREIGN KEY)
 ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_column] FOREIGN KEY ([ref_column_guid]) REFERENCES [dbo].[contracts_db_columns] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_index] FOREIGN KEY ([ref_index_guid]) REFERENCES [dbo].[contracts_db_indexes] ([key_guid]);
-ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
-ALTER TABLE [dbo].[contracts_db_tables] ADD CONSTRAINT [FK_cdt_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[contracts_db_engines] ADD CONSTRAINT [FK_cde_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[contracts_db_tables] ADD CONSTRAINT [FK_cdt_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_column] FOREIGN KEY ([ref_column_guid]) REFERENCES [dbo].[contracts_db_columns] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_constraint] FOREIGN KEY ([ref_constraint_guid]) REFERENCES [dbo].[contracts_db_constraints] ([key_guid]);
-ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_ref_column] FOREIGN KEY ([ref_referenced_column_guid]) REFERENCES [dbo].[contracts_db_columns] ([key_guid]);
-ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations_models] ADD CONSTRAINT [FK_cdom_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[contracts_types_ddl_mapping] ADD CONSTRAINT [FK_ctddm_engine] FOREIGN KEY ([ref_engine_guid]) REFERENCES [dbo].[contracts_db_engines] ([key_guid]);
+ALTER TABLE [dbo].[contracts_types_ddl_mapping] ADD CONSTRAINT [FK_ctddm_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[contracts_types_ddl_mapping] ADD CONSTRAINT [FK_ctddm_type] FOREIGN KEY ([ref_type_guid]) REFERENCES [dbo].[contracts_primitives_types] ([key_guid]);
+ALTER TABLE [dbo].[contracts_enums_ddl_mapping] ADD CONSTRAINT [FK_ceddm_engine] FOREIGN KEY ([ref_engine_guid]) REFERENCES [dbo].[contracts_db_engines] ([key_guid]);
+ALTER TABLE [dbo].[contracts_enums_ddl_mapping] ADD CONSTRAINT [FK_ceddm_enum] FOREIGN KEY ([ref_enum_guid]) REFERENCES [dbo].[contracts_primitives_enums] ([key_guid]);
+ALTER TABLE [dbo].[contracts_enums_ddl_mapping] ADD CONSTRAINT [FK_ceddm_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_ref_table] FOREIGN KEY ([ref_referenced_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_constraints] ADD CONSTRAINT [FK_cdcn_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
-ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
 ALTER TABLE [dbo].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_type] FOREIGN KEY ([ref_type_guid]) REFERENCES [dbo].[contracts_primitives_types] ([key_guid]);
-ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [FK_cdi_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [FK_cdi_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[contracts_db_indexes] ADD CONSTRAINT [FK_cdi_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [dbo].[contracts_db_tables] ([key_guid]);
 ALTER TABLE [dbo].[contracts_primitives_enums] ADD CONSTRAINT [FK_cpe_enum_type] FOREIGN KEY ([ref_enum_type_guid]) REFERENCES [dbo].[contracts_primitives_enum_types] ([key_guid]);
-ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [FK_cdo_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
-ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [FK_ssc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdomf_model] FOREIGN KEY ([ref_model_guid]) REFERENCES [dbo].[contracts_db_operations_models] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdomf_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdomf_type] FOREIGN KEY ([ref_type_guid]) REFERENCES [dbo].[contracts_primitives_types] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [FK_cdo_input_model] FOREIGN KEY ([ref_input_model_guid]) REFERENCES [dbo].[contracts_db_operations_models] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [FK_cdo_output_model] FOREIGN KEY ([ref_output_model_guid]) REFERENCES [dbo].[contracts_db_operations_models] ([key_guid]);
+ALTER TABLE [dbo].[contracts_db_operations] ADD CONSTRAINT [FK_cdo_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [FK_ssc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_modules_manifest] ([key_guid]) ON DELETE CASCADE;

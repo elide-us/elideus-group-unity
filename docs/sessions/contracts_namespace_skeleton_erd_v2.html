@@ -1,0 +1,302 @@
+<style>
+#erd { width:100%; }
+#erd svg.erDiagram { width:100%; height:auto; }
+#erd svg.erDiagram .er.entityLabel,
+#erd svg.erDiagram .er.relationshipLabel,
+#erd svg.erDiagram .er.entityBox text,
+#erd svg.erDiagram text { font-family:"Anthropic Sans", sans-serif; }
+#erd svg.erDiagram .row-rect-odd path,
+#erd svg.erDiagram .row-rect-odd rect,
+#erd svg.erDiagram .row-rect-even path,
+#erd svg.erDiagram .row-rect-even rect { stroke:none !important; }
+</style>
+<div id="erd"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+
+const palette = dark ? {
+  bg: '#1a1a18',
+  headerFill: '#3C3489',
+  headerText: '#EEEDFE',
+  rowOdd: '#26215C',
+  rowEven: '#1f1b4d',
+  rowText: '#CECBF6',
+  border: '#7F77DD',
+  line: '#AFA9EC',
+  relLabel: '#CECBF6',
+  entityLabel: '#EEEDFE',
+} : {
+  bg: '#ffffff',
+  headerFill: '#534AB7',
+  headerText: '#ffffff',
+  rowOdd: '#EEEDFE',
+  rowEven: '#ffffff',
+  rowText: '#26215C',
+  border: '#534AB7',
+  line: '#3C3489',
+  relLabel: '#3C3489',
+  entityLabel: '#26215C',
+};
+
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    background: palette.bg,
+    lineColor: palette.line,
+    textColor: palette.entityLabel,
+    primaryColor: palette.headerFill,
+    primaryTextColor: palette.headerText,
+    primaryBorderColor: palette.border,
+    secondaryColor: palette.rowOdd,
+    tertiaryColor: palette.rowEven,
+    erd: {
+      entityLabelBackground: palette.headerFill,
+    },
+  },
+});
+
+const src = `erDiagram
+  contracts_packages_packages ||--o{ contracts_primitives_types : owns
+  contracts_packages_packages ||--o{ contracts_primitives_enum_types : owns
+  contracts_packages_packages ||--o{ contracts_primitives_enums : owns
+  contracts_packages_packages ||--o{ contracts_security_users : owns
+  contracts_packages_packages ||--o{ contracts_security_roles : owns
+  contracts_packages_packages ||--o{ contracts_security_grants : owns
+  contracts_packages_packages ||--o{ contracts_providers_providers : owns
+  contracts_packages_packages ||--o{ contracts_providers_operations : owns
+  contracts_providers_providers ||--o{ contracts_providers_operations : exposes
+  contracts_providers_providers o|--o{ contracts_providers_providers : composes
+  contracts_packages_packages ||--o{ contracts_modules_modules : owns
+  contracts_packages_packages ||--o{ contracts_modules_functions : owns
+  contracts_packages_packages ||--o{ contracts_modules_bodies : owns
+  contracts_packages_packages ||--o{ contracts_modules_parameters : owns
+  contracts_packages_packages ||--o{ contracts_modules_returns : owns
+  contracts_modules_modules ||--o{ contracts_modules_functions : declares
+  contracts_modules_functions ||--o{ contracts_modules_bodies : implemented_by
+  contracts_modules_functions ||--o{ contracts_modules_parameters : has
+  contracts_modules_functions ||--o{ contracts_modules_returns : has
+  contracts_modules_parameters }o--|| contracts_primitives_types : typed_by
+  contracts_modules_returns }o--|| contracts_primitives_types : typed_by
+  contracts_modules_modules o|--o{ contracts_modules_modules : extends
+  contracts_modules_bodies }o--|| contracts_modules_modules : hosted_by
+  contracts_packages_packages ||--o{ contracts_rpc_domains : owns
+  contracts_packages_packages ||--o{ contracts_rpc_subdomains : owns
+  contracts_packages_packages ||--o{ contracts_rpc_operations : owns
+  contracts_rpc_domains ||--o{ contracts_rpc_subdomains : contains
+  contracts_rpc_subdomains ||--o{ contracts_rpc_operations : contains
+  contracts_rpc_operations }o--|| contracts_modules_functions : dispatches_to
+  contracts_rpc_operations }o--|| contracts_security_roles : requires
+  contracts_packages_packages ||--o{ contracts_endpoints_endpoints : owns
+  contracts_endpoints_endpoints }o--|| contracts_adapters_adapters : served_by
+  contracts_endpoints_endpoints }o--|| contracts_rpc_subdomains : exposes
+  contracts_packages_packages ||--o{ contracts_adapters_adapters : owns
+  contracts_adapters_adapters }o--|| contracts_transports_transports : speaks
+  contracts_packages_packages ||--o{ contracts_transports_transports : owns
+  contracts_security_users }o--o{ contracts_security_grants : holds
+  contracts_security_roles }o--o{ contracts_security_grants : grants
+  contracts_primitives_enums }o--|| contracts_primitives_enum_types : member_of
+  contracts_packages_packages {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+  }
+  contracts_primitives_types {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_primitives_enum_types {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_primitives_enums {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_enum_type_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_security_users {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_security_roles {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_security_grants {
+    UNIQUEIDENTIFIER key_guid PK
+    UNIQUEIDENTIFIER ref_user_guid FK
+    UNIQUEIDENTIFIER ref_role_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_providers_providers {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_parent_provider_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_providers_operations {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_provider_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_modules_modules {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_parent_module_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_modules_functions {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_module_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_modules_bodies {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_function_guid FK
+    UNIQUEIDENTIFIER ref_module_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_modules_parameters {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_function_guid FK
+    UNIQUEIDENTIFIER ref_type_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_modules_returns {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_function_guid FK
+    UNIQUEIDENTIFIER ref_type_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_rpc_domains {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_rpc_subdomains {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_domain_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_rpc_operations {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_subdomain_guid FK
+    UNIQUEIDENTIFIER ref_function_guid FK
+    UNIQUEIDENTIFIER ref_required_role_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_endpoints_endpoints {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_adapter_guid FK
+    UNIQUEIDENTIFIER ref_subdomain_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_adapters_adapters {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_transport_guid FK
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }
+  contracts_transports_transports {
+    UNIQUEIDENTIFIER key_guid PK
+    NVARCHAR pub_name
+    UNIQUEIDENTIFIER ref_package_guid FK
+  }`;
+
+const { svg } = await mermaid.render('erd-svg', src);
+const host = document.getElementById('erd');
+host.innerHTML = svg;
+
+const root = host.querySelector('svg.erDiagram');
+
+// Round entity outer box and re-style its fill/stroke
+host.querySelectorAll('svg.erDiagram .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  rect.setAttribute('fill', 'transparent');
+  rect.setAttribute('stroke', palette.border);
+  rect.setAttribute('stroke-width', '1');
+  firstPath.replaceWith(rect);
+});
+
+// Header row (entity title strip) — first .row-rect-* per node group
+host.querySelectorAll('svg.erDiagram .node').forEach(node => {
+  const headerPath = node.querySelector('.row-rect-odd path, .row-rect-even path');
+  if (headerPath) {
+    headerPath.setAttribute('fill', palette.headerFill);
+    headerPath.setAttribute('stroke', 'none');
+  }
+});
+
+// All attribute row backgrounds — alternating
+let oddToggle = false;
+host.querySelectorAll('svg.erDiagram .row-rect-odd path').forEach(p => {
+  p.setAttribute('fill', palette.rowOdd);
+  p.setAttribute('stroke', 'none');
+});
+host.querySelectorAll('svg.erDiagram .row-rect-even path').forEach(p => {
+  p.setAttribute('fill', palette.rowEven);
+  p.setAttribute('stroke', 'none');
+});
+
+// Entity title text — make readable on header fill
+host.querySelectorAll('svg.erDiagram .er.entityLabel, svg.erDiagram text.er.entityLabel').forEach(t => {
+  t.setAttribute('fill', palette.headerText);
+  t.style.fontWeight = '500';
+});
+
+// Attribute row text
+host.querySelectorAll('svg.erDiagram .er.entityBox text, svg.erDiagram .er.attributeBoxOdd text, svg.erDiagram .er.attributeBoxEven text').forEach(t => {
+  t.setAttribute('fill', palette.rowText);
+});
+
+// Catch any remaining bare <text> inside entity nodes
+host.querySelectorAll('svg.erDiagram g.node text').forEach(t => {
+  if (!t.getAttribute('fill') || t.getAttribute('fill') === 'inherit') {
+    t.setAttribute('fill', palette.rowText);
+  }
+});
+
+// Relationship lines
+host.querySelectorAll('svg.erDiagram .er.relationshipLine, svg.erDiagram path.er.relationshipLine').forEach(p => {
+  p.setAttribute('stroke', palette.line);
+  p.setAttribute('stroke-width', '1');
+});
+
+// Relationship labels
+host.querySelectorAll('svg.erDiagram .er.relationshipLabel, svg.erDiagram text.er.relationshipLabel').forEach(t => {
+  t.setAttribute('fill', palette.relLabel);
+});
+host.querySelectorAll('svg.erDiagram .er.relationshipLabelBox').forEach(b => {
+  b.setAttribute('fill', palette.bg);
+});
+</script>
