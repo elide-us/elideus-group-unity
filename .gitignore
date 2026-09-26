@@ -69,7 +69,7 @@ instance/
 .scrapy
 
 # Claude stuff:
-.claude
+.claude/worktrees
 
 # Sphinx documentation
 docs/_build/
