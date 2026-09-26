@@ -50,6 +50,10 @@ VALUES
   ('F4CF3C0D-908E-5682-8FE7-F9973B90C56A', 'VECTOR', 'VECTOR', 'vector', 'vector', 'list[float]', 'number[]', 'array', -10, NULL, 'Vector embedding. Dimension count via pub_max_length. MSSQL/Azure SQL native; Postgres via pgvector; MySQL 9.0+ native.', 'vector', 1);
 GO
 
+
+
+
+
 -- =====================================================================
 -- Generative section
 -- =====================================================================
@@ -180,6 +184,31 @@ VALUES
   ('92400F11-FCFD-5285-B9E2-D682B2496A88', '4BE7C586-9847-5925-90A3-5071D8228F26', 'CHECK', 3, 'Check constraint. pub_expression on the constraint row holds the predicate.'),
   ('B6ABA725-1FDB-5454-B164-DDBE11079598', '4BE7C586-9847-5925-90A3-5071D8228F26', 'FOREIGN_KEY', 1, 'Foreign key constraint. Source and target columns via constraint_columns junction.'),
   ('04B28DA7-E20C-5AEE-8E2A-F8FE79ADCF07', 'F5539B3E-417C-5A95-BF9B-592B97369B40', 'GENERATED', 1, 'Declared schema generated from contracts_db_* rows.');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 -- Indexes
 CREATE INDEX [IX_cdic_index_guid] ON [dbo].[contracts_db_index_columns] ([ref_index_guid]);

@@ -54,12 +54,12 @@ class KernelEnumModule(BaseModule):
         et.pub_name AS type_name,
         (
           SELECT e.pub_name AS name, e.pub_value AS value
-          FROM contracts_primitives_enums e
+          FROM [etg].contracts_primitives_enums e
           WHERE e.ref_enum_type_guid = et.key_guid
           ORDER BY e.pub_value
           FOR JSON PATH
         ) AS members
-      FROM contracts_primitives_enum_types et
+      FROM [etg].contracts_primitives_enum_types et
       ORDER BY et.pub_name
       FOR JSON PATH;
     """
