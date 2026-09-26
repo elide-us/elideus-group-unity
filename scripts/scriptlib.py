@@ -42,6 +42,31 @@ async def connect(dbname: str | None = None):
 
 NS_HASH = uuid.UUID(os.getenv('NS_HASH', 'DECAFBAD-CAFE-FADE-BABE-C0FFEE420DAB'))
 
+# Schema the type graph physically lives in (contracts_*). Bare table
+# references would otherwise resolve to the login's default schema (dbo);
+# everything here is addressed through this schema instead.
+KERNEL_SCHEMA = 'etg'
+
+# The package manifest is a control table, not part of the type graph; it
+# lives in dbo alongside application data.
+MANIFEST_SCHEMA = 'dbo'
+MANIFEST_TABLE = 'service_packages_manifest'
+
+
+def _qt(schema: str, name: str) -> str:
+  """Schema-qualified table reference, e.g. [etg].[contracts_db_tables]."""
+  return '[%s].[%s]' % (schema, name)
+
+
+def _kt(name: str) -> str:
+  """Type-graph table reference in KERNEL_SCHEMA."""
+  return _qt(KERNEL_SCHEMA, name)
+
+
+def _mt() -> str:
+  """The package manifest, e.g. [dbo].[service_packages_manifest]."""
+  return _qt(MANIFEST_SCHEMA, MANIFEST_TABLE)
+
 
 def _guid(entity_type: str, natural_key: str) -> str:
   return str(uuid.uuid5(NS_HASH, '%s:%s' % (entity_type, natural_key))).upper()
@@ -78,19 +103,22 @@ async def _execute(conn, sql: str, params: tuple = ()) -> int:
     return cur.rowcount
 
 
-async def _merge(conn, table: str, key_column: str, values: dict) -> None:
+async def _merge(conn, table: str, key_column: str, values: dict,
+                 schema: str | None = None) -> None:
+  """MERGE one row by key_column. schema defaults to KERNEL_SCHEMA; seed
+  rows carry their own schema and pass it explicitly."""
   cols = list(values.keys())
   placeholders = ', '.join('?' for _ in cols)
   col_list = ', '.join('[%s]' % c for c in cols)
   update_set = ', '.join('T.[%s] = S.[%s]' % (c, c) for c in cols if c != key_column)
   sql = (
-    'MERGE INTO [%(table)s] AS T '
+    'MERGE INTO %(table)s AS T '
     'USING (SELECT %(placeholders)s) AS S (%(col_list)s) '
     'ON T.[%(key)s] = S.[%(key)s] '
     'WHEN MATCHED THEN UPDATE SET %(update_set)s '
     'WHEN NOT MATCHED THEN INSERT (%(col_list)s) VALUES (%(values_list)s);'
   ) % {
-    'table': table,
+    'table': _qt(schema or KERNEL_SCHEMA, table),
     'placeholders': placeholders,
     'col_list': col_list,
     'key': key_column,
@@ -168,7 +196,7 @@ async def _load_type_lookup(conn) -> tuple[dict[str, str], dict[str, str]]:
   """
   rows = await _query_json(
     conn,
-    "SELECT pub_name, pub_mssql_sys_type, key_guid FROM contracts_primitives_types FOR JSON PATH, INCLUDE_NULL_VALUES"
+    f"SELECT pub_name, pub_mssql_sys_type, key_guid FROM {_kt('contracts_primitives_types')} FOR JSON PATH, INCLUDE_NULL_VALUES"
   )
   base_to_name: dict[str, str] = {}
   name_to_guid: dict[str, str] = {}
@@ -374,9 +402,9 @@ async def _populate_index_columns(conn, index_guids: dict[str, str], column_guid
 async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, str]:
   enum_rows = await _query_json(
     conn,
-    """SELECT e.pub_name, e.key_guid
-       FROM contracts_primitives_enums e
-       JOIN contracts_primitives_enum_types et ON e.ref_enum_type_guid = et.key_guid
+    f"""SELECT e.pub_name, e.key_guid
+       FROM {_kt('contracts_primitives_enums')} e
+       JOIN {_kt('contracts_primitives_enum_types')} et ON e.ref_enum_type_guid = et.key_guid
        WHERE et.pub_name = 'constraint_kind'
        FOR JSON PATH"""
   )
@@ -527,9 +555,9 @@ async def populate(conn) -> None:
 # dump
 # =============================================================================
 
-async def _read_table_projection(conn, table_name: str) -> tuple[list[str], list[dict]]:
+async def _read_table_projection(conn, table_name: str) -> tuple[str, list[str], list[dict]]:
   """Reads a table's projected columns (filtering pub_exclude_element = 1)
-  and returns (column_names, rows). The projection is sourced from
+  and returns (schema, column_names, rows). The projection is sourced from
   contracts_db_columns, the same way generate_seed does it; this keeps
   the dump's seed builders consistent with the install seed format.
 
@@ -537,79 +565,80 @@ async def _read_table_projection(conn, table_name: str) -> tuple[list[str], list
   columns in their pub_ordinal order. Same rule as generate_seed."""
   table_row = await _query_json(
     conn,
-    "SELECT key_guid FROM contracts_db_tables WHERE pub_name = ? FOR JSON PATH",
+    f"SELECT key_guid, pub_schema FROM {_kt('contracts_db_tables')} WHERE pub_name = ? FOR JSON PATH",
     (table_name,)
   )
   if not table_row:
     raise ValueError('table %s not found in contracts_db_tables' % table_name)
   table_guid = table_row[0]['key_guid']
+  schema = table_row[0]['pub_schema']
 
   columns = await _read_seed_column_projection(conn, table_guid)
   if not columns:
-    return ([], [])
+    return (schema, [], [])
 
   order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
   select_list = ', '.join(columns)
   sql = (
-    'SELECT %s FROM [%s] ORDER BY %s '
+    'SELECT %s FROM %s ORDER BY %s '
     'FOR JSON PATH, INCLUDE_NULL_VALUES'
-  ) % (select_list, table_name, order_by)
+  ) % (select_list, _qt(schema, table_name), order_by)
   rows = await _query_json(conn, sql)
-  return (columns, rows)
+  return (schema, columns, rows)
 
 
 async def _read_schema(conn) -> dict:
   tables = await _query_json(
     conn,
-    """SELECT key_guid, pub_name, pub_schema, pub_alias
-       FROM contracts_db_tables
+    f"""SELECT key_guid, pub_name, pub_schema, pub_alias
+       FROM {_kt('contracts_db_tables')}
        ORDER BY pub_schema, pub_name
        FOR JSON PATH"""
   )
   columns = await _query_json(
     conn,
-    """SELECT c.key_guid, c.ref_table_guid, c.pub_name, c.pub_ordinal,
+    f"""SELECT c.key_guid, c.ref_table_guid, c.pub_name, c.pub_ordinal,
               c.pub_is_nullable, c.pub_default_value, c.pub_max_length,
               t.pub_mssql_type, t.pub_default_length, t.pub_name AS type_name,
               t.pub_emits_length
-       FROM contracts_db_columns c
-       JOIN contracts_primitives_types t ON c.ref_type_guid = t.key_guid
+       FROM {_kt('contracts_db_columns')} c
+       JOIN {_kt('contracts_primitives_types')} t ON c.ref_type_guid = t.key_guid
        ORDER BY c.ref_table_guid, c.pub_ordinal
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
   indexes = await _query_json(
     conn,
-    """SELECT key_guid, ref_table_guid, pub_name, pub_is_unique
-       FROM contracts_db_indexes
+    f"""SELECT key_guid, ref_table_guid, pub_name, pub_is_unique
+       FROM {_kt('contracts_db_indexes')}
        ORDER BY ref_table_guid, pub_name
        FOR JSON PATH"""
   )
   index_columns = await _query_json(
     conn,
-    """SELECT ic.ref_index_guid, ic.pub_ordinal, c.pub_name AS column_name
-       FROM contracts_db_index_columns ic
-       JOIN contracts_db_columns c ON ic.ref_column_guid = c.key_guid
+    f"""SELECT ic.ref_index_guid, ic.pub_ordinal, c.pub_name AS column_name
+       FROM {_kt('contracts_db_index_columns')} ic
+       JOIN {_kt('contracts_db_columns')} c ON ic.ref_column_guid = c.key_guid
        ORDER BY ic.ref_index_guid, ic.pub_ordinal
        FOR JSON PATH"""
   )
   constraints = await _query_json(
     conn,
-    """SELECT cn.key_guid, cn.ref_table_guid, cn.ref_referenced_table_guid,
+    f"""SELECT cn.key_guid, cn.ref_table_guid, cn.ref_referenced_table_guid,
               cn.pub_name, cn.pub_expression, cn.pub_delete_disposition,
               e.pub_name AS kind_name
-       FROM contracts_db_constraints cn
-       JOIN contracts_primitives_enums e ON cn.ref_kind_enum_guid = e.key_guid
+       FROM {_kt('contracts_db_constraints')} cn
+       JOIN {_kt('contracts_primitives_enums')} e ON cn.ref_kind_enum_guid = e.key_guid
        ORDER BY cn.ref_table_guid, e.pub_value, cn.pub_name
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
   constraint_columns = await _query_json(
     conn,
-    """SELECT cc.ref_constraint_guid, cc.pub_ordinal,
+    f"""SELECT cc.ref_constraint_guid, cc.pub_ordinal,
               c.pub_name AS column_name,
               rc.pub_name AS ref_column_name
-       FROM contracts_db_constraint_columns cc
-       JOIN contracts_db_columns c ON cc.ref_column_guid = c.key_guid
-       LEFT JOIN contracts_db_columns rc ON cc.ref_referenced_column_guid = rc.key_guid
+       FROM {_kt('contracts_db_constraint_columns')} cc
+       JOIN {_kt('contracts_db_columns')} c ON cc.ref_column_guid = c.key_guid
+       LEFT JOIN {_kt('contracts_db_columns')} rc ON cc.ref_referenced_column_guid = rc.key_guid
        ORDER BY cc.ref_constraint_guid, cc.pub_ordinal
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
@@ -723,7 +752,7 @@ def _quote_sql_value(v) -> str:
   return "'%s'" % str(v).replace("'", "''")
 
 
-def _build_table_seed(table_name: str, columns: list[str], rows: list[dict]) -> str:
+def _build_table_seed(schema: str, table_name: str, columns: list[str], rows: list[dict]) -> str:
   """Generic INSERT builder for any table. Takes the projection column list
   and the rows, emits an INSERT statement. Returns empty string for empty
   input. Column list and row values stay aligned because both come from
@@ -731,7 +760,7 @@ def _build_table_seed(table_name: str, columns: list[str], rows: list[dict]) -> 
   if not rows:
     return ''
   col_list = ', '.join(columns)
-  lines = ['INSERT INTO [dbo].[%s]' % table_name,
+  lines = ['INSERT INTO %s' % _qt(schema, table_name),
            '  (%s)' % col_list,
            'VALUES']
   vals = []
@@ -742,9 +771,9 @@ def _build_table_seed(table_name: str, columns: list[str], rows: list[dict]) -> 
 
 async def dump(conn, prefix: str = 'schema') -> str:
   print('Reading schema...')
-  types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types')
-  enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types')
-  enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums')
+  types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types')
+  enum_types_schema, enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types')
+  enums_schema, enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums')
   schema = await _read_schema(conn)
 
   table_by_guid = {t['key_guid']: t for t in schema['tables']}
@@ -754,8 +783,9 @@ async def dump(conn, prefix: str = 'schema') -> str:
     None,
   )
 
+  # No generation timestamp: the output must be byte-identical to the
+  # checked-in kernel DDL when the database round-trips.
   sections: list[str] = []
-  sections.append('-- Generated %s UTC' % datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
   sections.append('SET ANSI_NULLS ON;\nGO\nSET QUOTED_IDENTIFIER ON;\nGO\n')
 
   sections.append('-- =====================================================================')
@@ -770,7 +800,7 @@ async def dump(conn, prefix: str = 'schema') -> str:
     for con in types_constraints:
       ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
       sections.append(_build_constraint(con, types_table, ref_table, schema['constraint_columns']))
-  sections.append(_build_table_seed('contracts_primitives_types', types_columns, types))
+  sections.append(_build_table_seed(types_schema, 'contracts_primitives_types', types_columns, types))
   sections.append('GO')
   sections.append('')
 
@@ -786,10 +816,10 @@ async def dump(conn, prefix: str = 'schema') -> str:
 
   if enums:
     sections.append('-- contracts_primitives_enum_types seed')
-    sections.append(_build_table_seed('contracts_primitives_enum_types', enum_types_columns, enum_types))
+    sections.append(_build_table_seed(enum_types_schema, 'contracts_primitives_enum_types', enum_types_columns, enum_types))
     sections.append('')
     sections.append('-- contracts_primitives_enums seed')
-    sections.append(_build_table_seed('contracts_primitives_enums', enums_columns, enums))
+    sections.append(_build_table_seed(enums_schema, 'contracts_primitives_enums', enums_columns, enums))
     sections.append('')
 
   sections.append('-- Indexes')
@@ -857,54 +887,6 @@ async def apply(conn, path: str) -> None:
   
 
 # =============================================================================
-# install_seed
-# =============================================================================
-#
-# Reads a JSON package file and MERGEs each row into its declared target
-# table by key_guid. Format:
-#
-#   {
-#     "package": "<name>",
-#     "version": "<semver>",
-#     "rows": [
-#       {"table": "<table_name>", "data": {"key_guid": "...", ...}},
-#       ...
-#     ]
-#   }
-#
-# Each row is one MERGE on key_guid. Rows are processed in file order; the
-# author is responsible for ordering when FK dependencies exist within a
-# package (e.g. tables before columns before constraints). Idempotent:
-# re-running over the same package with the same data is a no-op.
-# =============================================================================
-
-async def install_seed(conn, path: str) -> None:
-  with open(path, 'r') as f:
-    package = json.load(f)
-
-  pkg_name = package.get('package', '<unnamed>')
-  pkg_version = package.get('version', '<unversioned>')
-  rows = package.get('rows', [])
-
-  print('Installing seed: %s v%s (%d rows)' % (pkg_name, pkg_version, len(rows)))
-
-  counts: dict[str, int] = {}
-  for i, row in enumerate(rows):
-    table = row['table']
-    data = row['data']
-    try:
-      await _merge(conn, table, 'key_guid', data)
-      counts[table] = counts.get(table, 0) + 1
-    except Exception as e:
-      print('  row %d (%s, key_guid=%s): %s' % (i, table, data.get('key_guid'), e))
-      raise
-
-  for table in sorted(counts.keys()):
-    print('  %-40s %d' % (table, counts[table]))
-  print('Seed install complete.')
-
-
-# =============================================================================
 # generate_seed
 # =============================================================================
 #
@@ -925,16 +907,16 @@ async def install_seed(conn, path: str) -> None:
 # columns in their pub_ordinal order. Output is for install scripts, not
 # human reading — the goal is determinism, not aesthetics.
 #
-# Output is the flat-rows shape consumed by install_seed:
-#   {package, version, rows: [{table, data}, ...]}
+# Output is the flat-rows shape consumed by install:
+#   {package, version, rows: [{schema, table, data}, ...]}
 # =============================================================================
 
 async def _read_seed_table_list(conn) -> list[dict]:
   """Returns seed-flagged tables ordered by their install-order ordinal."""
   return await _query_json(
     conn,
-    """SELECT key_guid, pub_name, pub_seed_element
-       FROM contracts_db_tables
+    f"""SELECT key_guid, pub_name, pub_schema, pub_seed_element
+       FROM {_kt('contracts_db_tables')}
        WHERE pub_seed_element > 0
        ORDER BY pub_seed_element
        FOR JSON PATH"""
@@ -946,8 +928,8 @@ async def _read_seed_column_projection(conn, table_guid: str) -> list[str]:
   order. Excludes columns flagged with pub_exclude_element = 1."""
   rows = await _query_json(
     conn,
-    """SELECT pub_name
-       FROM contracts_db_columns
+    f"""SELECT pub_name
+       FROM {_kt('contracts_db_columns')}
        WHERE ref_table_guid = ?
          AND pub_exclude_element = 0
        ORDER BY pub_ordinal
@@ -980,12 +962,12 @@ async def generate_seed(conn, prefix: str = 'kernel_seed',
 
     select_list = ', '.join(columns)
     sql = (
-      'SELECT %s FROM [%s] ORDER BY %s '
+      'SELECT %s FROM %s ORDER BY %s '
       'FOR JSON PATH, INCLUDE_NULL_VALUES'
-    ) % (select_list, table_name, order_by)
+    ) % (select_list, _qt(t['pub_schema'], table_name), order_by)
     table_rows = await _query_json(conn, sql)
     for row in table_rows:
-      rows.append({'table': table_name, 'data': row})
+      rows.append({'schema': t['pub_schema'], 'table': table_name, 'data': row})
     counts[table_name] = len(table_rows)
 
   package_doc = {
@@ -1010,35 +992,40 @@ async def generate_seed(conn, prefix: str = 'kernel_seed',
 # install
 # =============================================================================
 #
-# Full package install pipeline. A package JSON has the shape:
+# Full package install pipeline. A package JSON is the same flat-rows
+# shape generate_seed emits:
 #
 #   {
 #     "package": "<name>",
 #     "version": "<semver>",
-#     "schema": [
-#       {"table": "contracts_db_tables",            "data": {...}},
-#       {"table": "contracts_db_columns",           "data": {...}},
-#       {"table": "contracts_db_constraints",       "data": {...}},
-#       {"table": "contracts_db_constraint_columns","data": {...}},
-#       ...
-#     ],
-#     "data": [
-#       {"table": "<arbitrary>", "data": {...}},
+#     "rows": [
+#       {"schema": "etg", "table": "contracts_db_tables",  "data": {...}},
+#       {"schema": "etg", "table": "contracts_db_columns", "data": {...}},
+#       {"schema": "dbo", "table": "<arbitrary>",          "data": {...}},
 #       ...
 #     ]
 #   }
 #
+# Every row names its target schema explicitly; there is no default. Rows
+# are processed in file order within a phase — the author orders them so
+# FK dependencies resolve (tables before columns before constraints).
+#
 # Phases (register first, seal last):
-#   1. register        — write service_modules_manifest row, pub_is_sealed=0
-#   2. seed_schema     — MERGE rows from `schema` into contracts_db_*,
-#                        auto-injecting ref_package_guid into every row
-#                        whose target table has that column
+#   1. register        — write the manifest row, pub_is_sealed=0
+#   2. seed_schema     — MERGE every row whose target table already exists
+#                        physically (the type-graph declarations and any
+#                        data for existing tables), auto-injecting
+#                        ref_package_guid into every row whose target table
+#                        has that column
 #   3. materialize     — diff contracts_db_tables vs sys.tables; for each
 #                        declared-but-missing table, generate and run DDL
 #                        (CREATE TABLE + indexes + PK/UNIQUE/CHECK + FKs)
-#   4. seed_data       — MERGE rows from `data` into target tables, with
-#                        the same auto-injection as seed_schema
+#   4. seed_data       — MERGE the rows deferred from phase 2 (data for
+#                        tables materialize just created), same injection
 #   5. seal            — flip pub_is_sealed=1 on the manifest row
+#
+# The phase 2/4 split uses the same test materialize does (is the table in
+# sys.tables), so a row is never merged before its table exists.
 #
 # Mid-install crashes leave pub_is_sealed=0 on the manifest row, so
 # re-running detects unsealed packages and the pipeline can resume
@@ -1051,26 +1038,28 @@ async def generate_seed(conn, prefix: str = 'kernel_seed',
 # what's still missing.
 # =============================================================================
 
-# Per-table cache of which tables physically have a ref_package_guid column.
-# Populated lazily by _table_has_package_column() to avoid querying
-# sys.columns for every row in a large package.
+# Per-table cache (keyed schema.table) of which tables physically have a
+# ref_package_guid column. Populated lazily by _table_has_package_column()
+# to avoid querying sys.columns for every row in a large package.
 _PACKAGE_COL_CACHE: dict[str, bool] = {}
 
 
-async def _table_has_package_column(conn, table: str) -> bool:
-  if table in _PACKAGE_COL_CACHE:
-    return _PACKAGE_COL_CACHE[table]
+async def _table_has_package_column(conn, schema: str, table: str) -> bool:
+  key = '%s.%s' % (schema, table)
+  if key in _PACKAGE_COL_CACHE:
+    return _PACKAGE_COL_CACHE[key]
   rows = await _query_json(
     conn,
     """SELECT 1 AS ok
        FROM sys.columns c
        JOIN sys.tables t ON c.object_id = t.object_id
-       WHERE t.name = ? AND c.name = 'ref_package_guid'
+       JOIN sys.schemas s ON t.schema_id = s.schema_id
+       WHERE s.name = ? AND t.name = ? AND c.name = 'ref_package_guid'
        FOR JSON PATH""",
-    (table,)
+    (schema, table)
   )
   has = bool(rows)
-  _PACKAGE_COL_CACHE[table] = has
+  _PACKAGE_COL_CACHE[key] = has
   return has
 
 
@@ -1169,21 +1158,23 @@ async def _merge_rows_phase(conn, rows: list, phase_name: str,
   attached to the message."""
   counts: dict[str, int] = {}
   for i, row in enumerate(rows):
-    if 'table' not in row or 'data' not in row:
-      raise ValueError('%s row %d malformed: missing "table" or "data" key' % (phase_name, i))
+    if 'schema' not in row or 'table' not in row or 'data' not in row:
+      raise ValueError('%s row %d malformed: missing "schema", "table" or "data" key' % (phase_name, i))
+    schema = row['schema']
     table = row['table']
+    target = '%s.%s' % (schema, table)
     data = dict(row['data'])  # copy so injection doesn't mutate caller's dict
     if 'key_guid' not in data:
-      raise ValueError('%s row %d (%s) missing key_guid' % (phase_name, i, table))
+      raise ValueError('%s row %d (%s) missing key_guid' % (phase_name, i, target))
     if pkg_guid and 'ref_package_guid' not in data:
-      if await _table_has_package_column(conn, table):
+      if await _table_has_package_column(conn, schema, table):
         data['ref_package_guid'] = pkg_guid
     try:
-      await _merge(conn, table, 'key_guid', data)
+      await _merge(conn, table, 'key_guid', data, schema=schema)
     except Exception as e:
       raise RuntimeError('%s row %d (%s, key_guid=%s): %s' % (
-        phase_name, i, table, data.get('key_guid'), e)) from e
-    counts[table] = counts.get(table, 0) + 1
+        phase_name, i, target, data.get('key_guid'), e)) from e
+    counts[target] = counts.get(target, 0) + 1
   return counts
 
 
@@ -1210,34 +1201,39 @@ async def install(conn, path: str) -> None:
     print('Error: package file missing required "package" or "version" field')
     return
 
-  schema_rows = package.get('schema', [])
-  data_rows = package.get('data', [])
+  rows = package.get('rows', [])
+
+  # Rows whose target table is already physical merge now; the rest wait
+  # for materialize. Same membership test _materialize uses.
+  existing = await _existing_table_names(conn)
+  ready_rows = [r for r in rows if '%s.%s' % (r.get('schema'), r.get('table')) in existing]
+  deferred_rows = [r for r in rows if '%s.%s' % (r.get('schema'), r.get('table')) not in existing]
 
   print('Installing %s v%s' % (pkg_name, pkg_version))
-  print('  schema rows: %d' % len(schema_rows))
-  print('  data rows:   %d' % len(data_rows))
+  print('  rows: %d (%d ready, %d deferred to materialize)' % (
+    len(rows), len(ready_rows), len(deferred_rows)))
 
-  manifest_guid = _guid('service_modules_manifest', pkg_name)
+  manifest_guid = _guid(MANIFEST_TABLE, pkg_name)
 
   # ---- Phase 1: register (manifest row, unsealed) ----
   print('Phase 1: register')
   try:
-    await _merge(conn, 'service_modules_manifest', 'key_guid', {
+    await _merge(conn, MANIFEST_TABLE, 'key_guid', {
       'key_guid': manifest_guid,
       'pub_name': pkg_name,
       'pub_version': pkg_version,
       'pub_last_version': pkg_version,
       'pub_is_sealed': 0,
-    })
+    }, schema=MANIFEST_SCHEMA)
     print('    %s v%s registered (unsealed)' % (pkg_name, pkg_version))
   except Exception as e:
     print('  FAILED: %s' % e)
     return
 
-  # ---- Phase 2: seed schema declarations ----
+  # ---- Phase 2: seed rows whose tables already exist ----
   print('Phase 2: seed_schema')
   try:
-    counts = await _merge_rows_phase(conn, schema_rows, 'seed_schema', pkg_guid=manifest_guid)
+    counts = await _merge_rows_phase(conn, ready_rows, 'seed_schema', pkg_guid=manifest_guid)
     _print_counts(counts)
   except Exception as e:
     print('  FAILED: %s' % e)
@@ -1251,10 +1247,10 @@ async def install(conn, path: str) -> None:
     print('  FAILED: %s' % e)
     return
 
-  # ---- Phase 4: seed data ----
+  # ---- Phase 4: seed rows deferred until their tables were materialized ----
   print('Phase 4: seed_data')
   try:
-    counts = await _merge_rows_phase(conn, data_rows, 'seed_data', pkg_guid=manifest_guid)
+    counts = await _merge_rows_phase(conn, deferred_rows, 'seed_data', pkg_guid=manifest_guid)
     _print_counts(counts)
   except Exception as e:
     print('  FAILED: %s' % e)
@@ -1265,7 +1261,7 @@ async def install(conn, path: str) -> None:
   try:
     await _execute(
       conn,
-      'UPDATE service_modules_manifest SET pub_is_sealed = 1 WHERE key_guid = ?',
+      'UPDATE %s SET pub_is_sealed = 1 WHERE key_guid = ?' % _mt(),
       (manifest_guid,)
     )
     print('    %s v%s sealed' % (pkg_name, pkg_version))
@@ -1281,8 +1277,10 @@ async def install(conn, path: str) -> None:
 # =============================================================================
 
 async def _tables_with_package_ref(conn) -> list[str]:
-  """Returns [schema.table] for every table that has a ref_package_guid
-  column. Determined at runtime so the list isn't hardcoded."""
+  """Returns [schema.table] for every table, in any schema, that has a
+  ref_package_guid column. Determined at runtime so the list isn't
+  hardcoded; package-owned data tables in dbo count as much as the
+  type-graph tables in etg."""
   rows = await _query_json(
     conn,
     """SELECT s.name AS pub_schema, t.name AS pub_name
@@ -1303,8 +1301,8 @@ async def _tables_with_package_ref(conn) -> list[str]:
 async def list_packages(conn) -> None:
   manifest = await _query_json(
     conn,
-    """SELECT key_guid, pub_name, pub_version, pub_is_sealed
-       FROM service_modules_manifest
+    f"""SELECT key_guid, pub_name, pub_version, pub_is_sealed
+       FROM {_mt()}
        ORDER BY pub_name
        FOR JSON PATH"""
   )
@@ -1314,10 +1312,10 @@ async def list_packages(conn) -> None:
   pkg_tables = await _tables_with_package_ref(conn)
   ownership: dict[str, dict[str, int]] = {}  # pkg_guid -> {table -> count}
   for tbl in pkg_tables:
-    table_name = tbl.split('.', 1)[1]
+    schema_name, table_name = tbl.split('.', 1)
     rows = await _query_json(
       conn,
-      "SELECT ref_package_guid AS pkg, COUNT(*) AS n FROM [%s] WHERE ref_package_guid IS NOT NULL GROUP BY ref_package_guid FOR JSON PATH" % table_name
+      "SELECT ref_package_guid AS pkg, COUNT(*) AS n FROM [%s].[%s] WHERE ref_package_guid IS NOT NULL GROUP BY ref_package_guid FOR JSON PATH" % (schema_name, table_name)
     )
     for r in rows:
       ownership.setdefault(r['pkg'].upper(), {})[tbl] = r['n']
@@ -1344,7 +1342,7 @@ async def list_packages(conn) -> None:
 #      table is NOT owned by the package — emit ALTER TABLE ... DROP COLUMN
 #      after dropping any indexes/FKs that reference the column.
 #   3. DELETE the manifest row. Every kernel table with ref_package_guid has
-#      ON DELETE CASCADE on its FK to service_modules_manifest, so the
+#      ON DELETE CASCADE on its FK to the manifest, so the
 #      database walks the FK graph and removes every package-owned row in
 #      one operation. Junction tables clean themselves via their own
 #      ref_package_guid columns; primitives are foundational and have no
@@ -1360,7 +1358,7 @@ async def list_packages(conn) -> None:
 async def _resolve_package(conn, pkg_name: str) -> dict | None:
   rows = await _query_json(
     conn,
-    "SELECT key_guid, pub_name, pub_version, pub_is_sealed FROM service_modules_manifest WHERE pub_name = ? FOR JSON PATH",
+    f"SELECT key_guid, pub_name, pub_version, pub_is_sealed FROM {_mt()} WHERE pub_name = ? FOR JSON PATH",
     (pkg_name,)
   )
   return rows[0] if rows else None
@@ -1385,7 +1383,7 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
   # Tables owned by the package
   owned_tables = await _query_json(
     conn,
-    "SELECT key_guid, pub_schema, pub_name FROM contracts_db_tables WHERE ref_package_guid = ? FOR JSON PATH",
+    f"SELECT key_guid, pub_schema, pub_name FROM {_kt('contracts_db_tables')} WHERE ref_package_guid = ? FOR JSON PATH",
     (pkg_guid,)
   )
   owned_table_guids = {t['key_guid'].upper() for t in owned_tables}
@@ -1416,10 +1414,10 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
   # ext_ columns: contracts_db_columns rows owned by pkg but parent table isn't owned
   ext_rows = await _query_json(
     conn,
-    """SELECT c.key_guid, c.pub_name AS column_name, c.ref_table_guid,
+    f"""SELECT c.key_guid, c.pub_name AS column_name, c.ref_table_guid,
               t.pub_schema, t.pub_name AS table_name
-       FROM contracts_db_columns c
-       JOIN contracts_db_tables t ON c.ref_table_guid = t.key_guid
+       FROM {_kt('contracts_db_columns')} c
+       JOIN {_kt('contracts_db_tables')} t ON c.ref_table_guid = t.key_guid
        WHERE c.ref_package_guid = ?
        FOR JSON PATH""",
     (pkg_guid,)
@@ -1436,12 +1434,12 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
   # Counts per package-aware kernel table — derived from the live schema.
   pkg_tables = await _tables_with_package_ref(conn)
   for tbl in pkg_tables:
-    table_name = tbl.split('.', 1)[1]
-    if table_name == 'service_modules_manifest':
+    schema_name, table_name = tbl.split('.', 1)
+    if table_name == MANIFEST_TABLE:
       continue  # don't count the manifest itself
     rows = await _query_json(
       conn,
-      "SELECT COUNT(*) AS n FROM [%s] WHERE ref_package_guid = ? FOR JSON PATH" % table_name,
+      "SELECT COUNT(*) AS n FROM [%s].[%s] WHERE ref_package_guid = ? FOR JSON PATH" % (schema_name, table_name),
       (pkg_guid,)
     )
     n = rows[0]['n'] if rows else 0
@@ -1472,7 +1470,7 @@ def _print_uninstall_plan(pkg: dict, scan: dict) -> None:
     for tbl in sorted(scan['pkg_table_counts'].keys()):
       print('    %-40s %d' % (tbl, scan['pkg_table_counts'][tbl]))
 
-  print('  DELETE service_modules_manifest row (cascade cleans up owned rows)')
+  print('  DELETE %s row (cascade cleans up owned rows)' % MANIFEST_TABLE)
   print('  Run maintenance pass (sp_updatestats, DBCC FREEPROCCACHE)')
 
 
@@ -1540,10 +1538,10 @@ async def _execute_uninstall(conn, pkg: dict, scan: dict) -> None:
   # across the kernel tables in one operation.
   n = await _execute(
     conn,
-    'DELETE FROM service_modules_manifest WHERE key_guid = ?',
+    'DELETE FROM %s WHERE key_guid = ?' % _mt(),
     (pkg_guid,)
   )
-  print('    DELETE service_modules_manifest: %s row(s) (cascade applied)' % n)
+  print('    DELETE %s: %s row(s) (cascade applied)' % (MANIFEST_TABLE, n))
 
   # Step 4: maintenance pass
   print('    EXEC sp_updatestats')
