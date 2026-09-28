@@ -177,14 +177,19 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 # contracts_db_* cluster with rows describing every table in the database.
 #
 # Pass-based:
-#   1. Tables       -> contracts_db_tables
-#   2. Columns      -> contracts_db_columns
+#   1. Tables       -> contracts_db_tables        (+ pub_seed_element: install
+#                      order by FK dependency depth, see _seed_order)
+#   2. Columns      -> contracts_db_columns       (+ pub_exclude_element by the
+#                      _excluded_from_seed name rule)
 #   3. Indexes      -> contracts_db_indexes
 #   4. Index cols   -> contracts_db_index_columns
-#   5. Constraints  -> contracts_db_constraints
+#   5. Constraints  -> contracts_db_constraints   (+ pub_delete_disposition from
+#                      sys.foreign_keys.delete_referential_action, whose 0..3
+#                      numbering is the constraint_disposition enum)
 #   6. Constr cols  -> contracts_db_constraint_columns
 #
-# Idempotent via MERGE on deterministic key_guid.
+# Idempotent via MERGE on deterministic key_guid. The flags are derived, not
+# authored: every populate run recomputes them from the live catalog.
 # =============================================================================
 
 async def _load_type_lookup(conn) -> tuple[dict[str, str], dict[str, str]]:
@@ -233,6 +238,42 @@ def _resolve_type_name(base_to_name: dict[str, str], sys_type: str,
   raise ValueError('unmapped sys_type: %s (no contracts_primitives_types row with matching pub_mssql_type)' % sys_type)
 
 
+def _excluded_from_seed(column_name: str) -> bool:
+  """Seed-projection rule for contracts_db_columns.pub_exclude_element:
+  priv_* timestamps come from column DEFAULT at MERGE time and
+  ref_package_guid is injected by the install pipeline, so neither is seed
+  data. generate_seed and dump read the flag; populate sets it."""
+  return column_name.startswith('priv_') or column_name == 'ref_package_guid'
+
+
+def _seed_order(tables: list[str], edges: list[tuple[str, str]]) -> dict[str, int]:
+  """Install-order ordinal (contracts_db_tables.pub_seed_element) for every
+  reflected table: rank by FK dependency depth so a table sorts after every
+  table it references, ties by schema.name. Self-references are ignored; a
+  cycle between distinct tables has no valid install order and fails loud.
+  Every reflected table is a seed table (nonzero)."""
+  deps: dict[str, set[str]] = {t: set() for t in tables}
+  for child, parent in edges:
+    if child != parent:
+      deps[child].add(parent)
+  depth: dict[str, int] = {}
+
+  def walk(t: str, path: tuple[str, ...]) -> int:
+    if t in depth:
+      return depth[t]
+    if t in path:
+      raise ValueError('FK cycle, no install order: %s' % ' -> '.join(path[path.index(t):] + (t,)))
+    depth[t] = 1 + max((walk(p, path + (t,)) for p in deps[t]), default=0)
+    return depth[t]
+
+  for t in tables:
+    walk(t, ())
+  ranked = sorted(tables, key=lambda t: (depth[t], t))
+  if len(ranked) > 255:
+    raise ValueError('pub_seed_element is TINYINT; %d tables exceed 255' % len(ranked))
+  return {t: i + 1 for i, t in enumerate(ranked)}
+
+
 async def _populate_tables(conn) -> dict[str, str]:
   # ORDER BY ensures alphabetical processing so alias assignment is
   # deterministic across runs against the same set of tables.
@@ -246,6 +287,22 @@ async def _populate_tables(conn) -> dict[str, str]:
        ORDER BY s.name, t.name
        FOR JSON PATH"""
   )
+  edges = await _query_json(
+    conn,
+    """SELECT
+         ps.name + '.' + pt.name AS child,
+         rs.name + '.' + rt.name AS parent
+       FROM sys.foreign_keys fk
+       JOIN sys.tables pt ON fk.parent_object_id = pt.object_id
+       JOIN sys.schemas ps ON pt.schema_id = ps.schema_id
+       JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id
+       JOIN sys.schemas rs ON rt.schema_id = rs.schema_id
+       FOR JSON PATH"""
+  )
+  seed = _seed_order(
+    ['%s.%s' % (r['pub_schema'], r['pub_name']) for r in rows],
+    [(e['child'], e['parent']) for e in edges],
+  )
   guids: dict[str, str] = {}
   taken_aliases: set[str] = set()
   for r in rows:
@@ -258,6 +315,7 @@ async def _populate_tables(conn) -> dict[str, str]:
       'pub_name': r['pub_name'],
       'pub_schema': r['pub_schema'],
       'pub_alias': alias,
+      'pub_seed_element': seed[natural],
     })
     guids[natural] = g
   print('  tables: %d' % len(guids))
@@ -319,6 +377,7 @@ async def _populate_columns(conn, table_guids: dict[str, str],
       'pub_is_nullable': int(bool(r['pub_is_nullable'])),
       'pub_default_value': default_value,
       'pub_max_length': max_length,
+      'pub_exclude_element': int(_excluded_from_seed(r['pub_name'])),
     })
     guids[column_natural] = g
   print('  columns: %d' % len(guids))
@@ -417,15 +476,16 @@ async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, 
          k.name AS pub_name,
          k.type_desc AS sys_kind,
          rs.name AS ref_schema,
-         rt.name AS ref_table_name
+         rt.name AS ref_table_name,
+         k.delete_action AS pub_delete_disposition
        FROM (
-         SELECT object_id, parent_object_id, name, 'PRIMARY_KEY' AS type_desc, NULL AS referenced_object_id FROM sys.key_constraints WHERE type='PK'
+         SELECT object_id, parent_object_id, name, 'PRIMARY_KEY' AS type_desc, NULL AS referenced_object_id, NULL AS delete_action FROM sys.key_constraints WHERE type='PK'
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'UNIQUE'      AS type_desc, NULL                       FROM sys.key_constraints WHERE type='UQ'
+         SELECT object_id, parent_object_id, name, 'UNIQUE'      AS type_desc, NULL,                       NULL                      FROM sys.key_constraints WHERE type='UQ'
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'FOREIGN_KEY' AS type_desc, referenced_object_id       FROM sys.foreign_keys
+         SELECT object_id, parent_object_id, name, 'FOREIGN_KEY' AS type_desc, referenced_object_id,       delete_referential_action FROM sys.foreign_keys
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'CHECK'       AS type_desc, NULL                       FROM sys.check_constraints
+         SELECT object_id, parent_object_id, name, 'CHECK'       AS type_desc, NULL,                       NULL                      FROM sys.check_constraints
        ) k
        JOIN sys.tables t ON k.parent_object_id = t.object_id
        JOIN sys.schemas s ON t.schema_id = s.schema_id
@@ -455,6 +515,7 @@ async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, 
       'ref_referenced_table_guid': ref_table_guid,
       'pub_name': r['pub_name'],
       'pub_expression': None,
+      'pub_delete_disposition': r['pub_delete_disposition'],
     })
     guids[natural] = g
   print('  constraints: %d' % len(guids))
@@ -895,12 +956,14 @@ async def apply(conn, path: str) -> None:
 # order, and the per-table column projections all come from the database.
 #
 # Seed-set membership and load order: contracts_db_tables.pub_seed_element.
-# Zero means not seed; nonzero is the install-order ordinal.
+# Zero means not seed; nonzero is the install-order ordinal (populate assigns
+# it from FK dependency depth, see _seed_order).
 #
 # Per-table projection: every column on the table except priv_* timestamps
-# and ref_package_guid. Both are install-pipeline concerns, not seed-data
-# concerns — timestamps come from column DEFAULT at MERGE time,
-# ref_package_guid is auto-injected by the install pipeline.
+# and ref_package_guid (contracts_db_columns.pub_exclude_element, which
+# populate sets by the _excluded_from_seed rule). Both are install-pipeline
+# concerns, not seed-data concerns — timestamps come from column DEFAULT at
+# MERGE time, ref_package_guid is auto-injected by the install pipeline.
 #
 # Per-table row sort: pub_ordinal if the table has it (junction tables and
 # anything else where ordinal is meaningful), otherwise the projected
