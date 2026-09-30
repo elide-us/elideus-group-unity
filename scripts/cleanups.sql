@@ -1,10 +1,10 @@
 -- Truncate data from reflection tables
-DELETE FROM contracts_db_constraint_columns;
-DELETE FROM contracts_db_constraints;
-DELETE FROM contracts_db_index_columns;
-DELETE FROM contracts_db_indexes;
-DELETE FROM contracts_db_columns;
-DELETE FROM contracts_db_tables;
+DELETE FROM etg.contracts_db_constraint_columns;
+DELETE FROM etg.contracts_db_constraints;
+DELETE FROM etg.contracts_db_index_columns;
+DELETE FROM etg.contracts_db_indexes;
+DELETE FROM etg.contracts_db_columns;
+DELETE FROM etg.contracts_db_tables;
 GO
 
 -- Drop all foreign keys
