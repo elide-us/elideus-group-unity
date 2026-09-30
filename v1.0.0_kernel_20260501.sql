@@ -179,7 +179,7 @@ CREATE TABLE [etg].[contracts_db_tables] (
 -- =====================================================================
 CREATE TABLE [etg].[contracts_primitives_enum_types] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
-  [ref_type_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(128) NOT NULL,
   [pub_notes] NVARCHAR(512) NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
@@ -188,8 +188,9 @@ CREATE TABLE [etg].[contracts_primitives_enum_types] (
 CREATE TABLE [etg].[contracts_primitives_enums] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_enum_type_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(128) NOT NULL,
-  [pub_value] NVARCHAR(512) NOT NULL,
+  [pub_value] TINYINT NOT NULL,
   [pub_notes] NVARCHAR(512) NULL,
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
@@ -263,57 +264,28 @@ VALUES
   ('7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'kernel', '1.0.0', NULL, 1);
 GO
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 -- contracts_primitives_enum_types seed
 INSERT INTO [etg].[contracts_primitives_enum_types]
-  (key_guid, pub_name, pub_notes)
+  (key_guid, ref_package_guid, pub_name, pub_notes)
 VALUES
-  ('4BE7C586-9847-5925-90A3-5071D8228F26', 'constraint_kind', 'Database constraint kinds: PRIMARY_KEY, FOREIGN_KEY, UNIQUE, CHECK.'),
-  ('F5539B3E-417C-5A95-BF9B-592B97369B40', 'schema_source', 'Origin of a generated schema view: PRIMARY (live introspection) or GENERATED (from contracts_db_* rows).'),
-  ('89BF8DE1-413E-582E-8D15-9629A883F6DA', 'constraint_disposition', 'Referential action for FK constraints: NO_ACTION (engine default), CASCADE, SET_NULL, SET_DEFAULT. Engine-specific DDL tokens live in contracts_ddl_enums_mapping.');
+  ('4BE7C586-9847-5925-90A3-5071D8228F26', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'constraint_kind', 'Database constraint kinds: PRIMARY_KEY, FOREIGN_KEY, UNIQUE, CHECK.'),
+  ('F5539B3E-417C-5A95-BF9B-592B97369B40', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'schema_source', 'Origin of a generated schema view: PRIMARY (live introspection) or GENERATED (from contracts_db_* rows).'),
+  ('89BF8DE1-413E-582E-8D15-9629A883F6DA', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'constraint_disposition', 'Referential action for FK constraints: NO_ACTION (engine default), CASCADE, SET_NULL, SET_DEFAULT. Engine-specific DDL tokens live in contracts_ddl_enums_mapping.');
 
 -- contracts_primitives_enums seed
 INSERT INTO [etg].[contracts_primitives_enums]
-  (key_guid, ref_enum_type_guid, pub_name, pub_value, pub_notes)
+  (key_guid, ref_enum_type_guid, ref_package_guid, pub_name, pub_value, pub_notes)
 VALUES
-  ('57F37618-1A3E-5D30-88CB-095E1DC91492', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'NO_ACTION', '0', 'Engine default. No clause emitted.'),
-  ('E3C5DACB-6027-515A-8FED-489D71869C86', 'F5539B3E-417C-5A95-BF9B-592B97369B40', 'PRIMARY', '0', 'Live database schema introspected via the engine catalog (sys.* / INFORMATION_SCHEMA).'),
-  ('3426C194-B912-5F71-802F-566E2FF1E8FF', '4BE7C586-9847-5925-90A3-5071D8228F26', 'PRIMARY_KEY', '0', 'Primary key constraint. One per table. Columns via constraint_columns junction.'),
-  ('59C1933F-C216-5F32-A7C9-70A883287B8D', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'CASCADE', '1', 'Delete or update of parent triggers same operation on children.'),
-  ('BA9F914F-A591-512D-B2DF-B5C84D64C474', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'SET_DEFAULT', '3', 'Child FK columns set to their column DEFAULT on parent delete/update.'),
-  ('4D75333D-E472-5813-A03B-C0162671A00D', '4BE7C586-9847-5925-90A3-5071D8228F26', 'UNIQUE', '2', 'Unique constraint. Columns via constraint_columns junction.'),
-  ('36DD290B-4606-5810-843E-CF324B66F504', '89BF8DE1-413E-582E-8D15-9629A883F6DA', 'SET_NULL', '2', 'Child FK columns set to NULL on parent delete/update. Child column must be nullable.'),
-  ('92400F11-FCFD-5285-B9E2-D682B2496A88', '4BE7C586-9847-5925-90A3-5071D8228F26', 'CHECK', '3', 'Check constraint. pub_expression on the constraint row holds the predicate.'),
-  ('B6ABA725-1FDB-5454-B164-DDBE11079598', '4BE7C586-9847-5925-90A3-5071D8228F26', 'FOREIGN_KEY', '1', 'Foreign key constraint. Source and target columns via constraint_columns junction.'),
-  ('04B28DA7-E20C-5AEE-8E2A-F8FE79ADCF07', 'F5539B3E-417C-5A95-BF9B-592B97369B40', 'GENERATED', '1', 'Declared schema generated from contracts_db_* rows.');
+  ('57F37618-1A3E-5D30-88CB-095E1DC91492', '89BF8DE1-413E-582E-8D15-9629A883F6DA', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'NO_ACTION', 0, 'Engine default. No clause emitted.'),
+  ('E3C5DACB-6027-515A-8FED-489D71869C86', 'F5539B3E-417C-5A95-BF9B-592B97369B40', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'PRIMARY', 0, 'Live database schema introspected via the engine catalog (sys.* / INFORMATION_SCHEMA).'),
+  ('3426C194-B912-5F71-802F-566E2FF1E8FF', '4BE7C586-9847-5925-90A3-5071D8228F26', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'PRIMARY_KEY', 0, 'Primary key constraint. One per table. Columns via constraint_columns junction.'),
+  ('59C1933F-C216-5F32-A7C9-70A883287B8D', '89BF8DE1-413E-582E-8D15-9629A883F6DA', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'CASCADE', 1, 'Delete or update of parent triggers same operation on children.'),
+  ('BA9F914F-A591-512D-B2DF-B5C84D64C474', '89BF8DE1-413E-582E-8D15-9629A883F6DA', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'SET_DEFAULT', 3, 'Child FK columns set to their column DEFAULT on parent delete/update.'),
+  ('4D75333D-E472-5813-A03B-C0162671A00D', '4BE7C586-9847-5925-90A3-5071D8228F26', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'UNIQUE', 2, 'Unique constraint. Columns via constraint_columns junction.'),
+  ('36DD290B-4606-5810-843E-CF324B66F504', '89BF8DE1-413E-582E-8D15-9629A883F6DA', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'SET_NULL', 2, 'Child FK columns set to NULL on parent delete/update. Child column must be nullable.'),
+  ('92400F11-FCFD-5285-B9E2-D682B2496A88', '4BE7C586-9847-5925-90A3-5071D8228F26', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'CHECK', 3, 'Check constraint. pub_expression on the constraint row holds the predicate.'),
+  ('B6ABA725-1FDB-5454-B164-DDBE11079598', '4BE7C586-9847-5925-90A3-5071D8228F26', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'FOREIGN_KEY', 1, 'Foreign key constraint. Source and target columns via constraint_columns junction.'),
+  ('04B28DA7-E20C-5AEE-8E2A-F8FE79ADCF07', 'F5539B3E-417C-5A95-BF9B-592B97369B40', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'GENERATED', 1, 'Declared schema generated from contracts_db_* rows.');
 
 -- Indexes
 CREATE INDEX [IX_cdic_index_guid] ON [etg].[contracts_db_index_columns] ([ref_index_guid]);
@@ -400,6 +372,8 @@ ALTER TABLE [etg].[contracts_db_columns] ADD CONSTRAINT [FK_cdc_type] FOREIGN KE
 ALTER TABLE [etg].[contracts_db_indexes] ADD CONSTRAINT [FK_cdi_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_db_indexes] ADD CONSTRAINT [FK_cdi_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [etg].[contracts_db_tables] ([key_guid]);
 ALTER TABLE [etg].[contracts_primitives_enums] ADD CONSTRAINT [FK_cpe_enum_type] FOREIGN KEY ([ref_enum_type_guid]) REFERENCES [etg].[contracts_primitives_enum_types] ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_enum_types] ADD CONSTRAINT [FK_cpet_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_primitives_enums] ADD CONSTRAINT [FK_cpe_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdomf_model] FOREIGN KEY ([ref_model_guid]) REFERENCES [etg].[contracts_db_operations_models] ([key_guid]);
 ALTER TABLE [etg].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdomf_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdomf_type] FOREIGN KEY ([ref_type_guid]) REFERENCES [etg].[contracts_primitives_types] ([key_guid]);

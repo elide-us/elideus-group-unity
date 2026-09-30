@@ -174,7 +174,10 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 # =============================================================================
 #
 # Reads the live database via INFORMATION_SCHEMA and sys.*, populates the
-# contracts_db_* cluster with rows describing every table in the database.
+# contracts_db_* cluster with rows describing every table in KERNEL_SCHEMA and
+# MANIFEST_SCHEMA, minus tool-support tables: the ones SSMS files under
+# "System Tables", marked by the extended property
+# microsoft_database_tools_support (e.g. dbo.sysdiagrams). Skips are printed.
 #
 # Pass-based:
 #   1. Tables       -> contracts_db_tables        (+ pub_seed_element: install
@@ -281,12 +284,27 @@ async def _populate_tables(conn) -> dict[str, str]:
     conn,
     """SELECT
          s.name AS pub_schema,
-         t.name AS pub_name
+         t.name AS pub_name,
+         CASE WHEN EXISTS (
+           SELECT 1 FROM sys.extended_properties ep
+           WHERE ep.class = 1 AND ep.major_id = t.object_id AND ep.minor_id = 0
+             AND ep.name = 'microsoft_database_tools_support'
+         ) THEN 1 ELSE 0 END AS sys_is_tool_support
        FROM sys.tables t
        JOIN sys.schemas s ON t.schema_id = s.schema_id
        ORDER BY s.name, t.name
        FOR JSON PATH"""
   )
+  kept: list[dict] = []
+  for r in rows:
+    natural = '%s.%s' % (r['pub_schema'], r['pub_name'])
+    if r['pub_schema'] not in (KERNEL_SCHEMA, MANIFEST_SCHEMA):
+      print('  skipped %s: schema is not %s or %s' % (natural, KERNEL_SCHEMA, MANIFEST_SCHEMA))
+    elif r['sys_is_tool_support']:
+      print('  skipped %s: microsoft_database_tools_support' % natural)
+    else:
+      kept.append(r)
+  rows = kept
   edges = await _query_json(
     conn,
     """SELECT
@@ -299,9 +317,10 @@ async def _populate_tables(conn) -> dict[str, str]:
        JOIN sys.schemas rs ON rt.schema_id = rs.schema_id
        FOR JSON PATH"""
   )
+  tables = ['%s.%s' % (r['pub_schema'], r['pub_name']) for r in rows]
   seed = _seed_order(
-    ['%s.%s' % (r['pub_schema'], r['pub_name']) for r in rows],
-    [(e['child'], e['parent']) for e in edges],
+    tables,
+    [(e['child'], e['parent']) for e in edges if e['child'] in tables and e['parent'] in tables],
   )
   guids: dict[str, str] = {}
   taken_aliases: set[str] = set()
@@ -616,11 +635,16 @@ async def populate(conn) -> None:
 # dump
 # =============================================================================
 
-async def _read_table_projection(conn, table_name: str) -> tuple[str, list[str], list[dict]]:
+async def _read_table_projection(conn, table_name: str, package_guid: str | None = None,
+                                 key_guid: str | None = None) -> tuple[str, list[str], list[dict]]:
   """Reads a table's projected columns (filtering pub_exclude_element = 1)
   and returns (schema, column_names, rows). The projection is sourced from
   contracts_db_columns, the same way generate_seed does it; this keeps
   the dump's seed builders consistent with the install seed format.
+
+  package_guid: keep ref_package_guid in the projection and return only the
+  rows that package owns; a table without the column returns every row.
+  key_guid: return only that row (the manifest's own kernel row).
 
   Sort: pub_ordinal if the projection includes it, else by all projected
   columns in their pub_ordinal order. Same rule as generate_seed."""
@@ -634,17 +658,26 @@ async def _read_table_projection(conn, table_name: str) -> tuple[str, list[str],
   table_guid = table_row[0]['key_guid']
   schema = table_row[0]['pub_schema']
 
-  columns = await _read_seed_column_projection(conn, table_guid)
+  columns = await _read_seed_column_projection(
+    conn, table_guid, keep=('ref_package_guid',) if package_guid else ())
   if not columns:
     return (schema, [], [])
 
+  where: list[str] = []
+  params: list = []
+  if package_guid and 'ref_package_guid' in columns:
+    where.append('ref_package_guid = ?')
+    params.append(package_guid)
+  if key_guid:
+    where.append('key_guid = ?')
+    params.append(key_guid)
   order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
   select_list = ', '.join(columns)
   sql = (
-    'SELECT %s FROM %s ORDER BY %s '
+    'SELECT %s FROM %s%s ORDER BY %s '
     'FOR JSON PATH, INCLUDE_NULL_VALUES'
-  ) % (select_list, _qt(schema, table_name), order_by)
-  rows = await _query_json(conn, sql)
+  ) % (select_list, _qt(schema, table_name), ' WHERE ' + ' AND '.join(where) if where else '', order_by)
+  rows = await _query_json(conn, sql, tuple(params))
   return (schema, columns, rows)
 
 
@@ -832,9 +865,16 @@ def _build_table_seed(schema: str, table_name: str, columns: list[str], rows: li
 
 async def dump(conn, prefix: str = 'schema') -> str:
   print('Reading schema...')
-  types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types')
-  enum_types_schema, enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types')
-  enums_schema, enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums')
+  # The kernel DDL is the kernel package's own install script: it embeds the
+  # kernel's manifest row and only the seed rows the kernel owns, with
+  # ref_package_guid carried through (the seed JSON leaves that to install).
+  kernel_guid = _guid(MANIFEST_TABLE, 'kernel')
+  manifest_schema, manifest_columns, manifest_rows = await _read_table_projection(conn, MANIFEST_TABLE, key_guid=kernel_guid)
+  if not manifest_rows:
+    raise ValueError('kernel package row %s not found in %s; apply the kernel manifest batch before generating' % (kernel_guid, _mt()))
+  types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types', package_guid=kernel_guid)
+  enum_types_schema, enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types', package_guid=kernel_guid)
+  enums_schema, enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums', package_guid=kernel_guid)
   schema = await _read_schema(conn)
 
   table_by_guid = {t['key_guid']: t for t in schema['tables']}
@@ -873,6 +913,9 @@ async def dump(conn, prefix: str = 'schema') -> str:
     if types_table and table['key_guid'] == types_table['key_guid']:
       continue
     sections.append(_build_create_table(table, schema['columns']))
+  sections.append('GO')
+  sections.append(_build_table_seed(manifest_schema, MANIFEST_TABLE, manifest_columns, manifest_rows))
+  sections.append('GO')
   sections.append('')
 
   if enums:
@@ -986,20 +1029,23 @@ async def _read_seed_table_list(conn) -> list[dict]:
   )
 
 
-async def _read_seed_column_projection(conn, table_guid: str) -> list[str]:
+async def _read_seed_column_projection(conn, table_guid: str,
+                                       keep: tuple[str, ...] = ()) -> list[str]:
   """Returns the projected column names for a seed table, in pub_ordinal
-  order. Excludes columns flagged with pub_exclude_element = 1."""
+  order. Excludes columns flagged with pub_exclude_element = 1, except any
+  named in keep. dump keeps ref_package_guid: the kernel DDL is the kernel
+  package's own install, so its embedded seeds carry ownership; the seed
+  JSON never does, install injects it."""
   rows = await _query_json(
     conn,
-    f"""SELECT pub_name
+    f"""SELECT pub_name, pub_exclude_element
        FROM {_kt('contracts_db_columns')}
        WHERE ref_table_guid = ?
-         AND pub_exclude_element = 0
        ORDER BY pub_ordinal
        FOR JSON PATH""",
     (table_guid,)
   )
-  return [r['pub_name'] for r in rows]
+  return [r['pub_name'] for r in rows if not r['pub_exclude_element'] or r['pub_name'] in keep]
 
 async def generate_seed(conn, prefix: str = 'kernel_seed',
                         package: str = 'kernel',
