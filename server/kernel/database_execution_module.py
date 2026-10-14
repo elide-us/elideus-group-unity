@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from . import BaseModule
 from .environment_variables_module import EnvironmentVariablesModule
+from server.helpers import discover_classes
 from .database_execution_providers import BaseDatabaseTransactionProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -66,12 +67,12 @@ class DatabaseExecutionModule(BaseModule):
   async def on_seal(self):
     pass
 
-  async def on_drain(self):
+  async def on_unseal(self):
     pass
   
   async def startup(self):
     env = self.get_module(EnvironmentVariablesModule)
-    await env.on_sealed()
+    await env.await_ready()
 
     provider_name = env.get("SQL_PROVIDER")
     if provider_name is None:
@@ -82,36 +83,35 @@ class DatabaseExecutionModule(BaseModule):
       logger.error("Variable 'SQL_PROVIDER' is not set. You must configure one database provider.")
       return
 
+    providers = discover_classes(f"{__package__}.database_execution_providers", "_provider")
+
     if provider_name == "AZURE_SQL_CONNECTION_STRING":
-      from .database_execution_providers.mssql_transaction_provider import MssqlTransactionProvider
       dsn = env.get(provider_name)
       if dsn is None:
         logger.error("Provider '%s' not available", provider_name)
         return
-      self._provider = MssqlTransactionProvider(dsn)
+      self._provider = providers["mssql_transaction_provider"](dsn)
 
     # elif provider_name == "POSTGRESQL_CONNECTION_STRING":
-    #   from .database_execution_providers.postgres_transaction_provider import PostgresTransactionProvider
     #   dsn = env.get(provider_name)
     #   if dsn is None:
     #     logging.error("DatabaseConnectionModule: %s not available", provider_name)
     #     return
-    #   self._provider = PostgresTransactionProvider(dsn)
+    #   self._provider = providers["postgres_transaction_provider"](dsn)
 
     # elif provider_name == "MYSQL_CONNECTION_STRING":
-    #   from .database_execution_providers.mysql_transaction_provider import MysqlTransactionProvider
     #   dsn = env.get(provider_name)
     #   if dsn is None:
     #     logging.error("DatabaseConnectionModule: %s not available", provider_name)
     #     return
-    #   self._provider = MysqlTransactionProvider(dsn)
+    #   self._provider = providers["mysql_transaction_provider"](dsn)
 
     else:
       logger.error("Unknown provider '%s'", provider_name)
       return
 
     await self._provider.connect()
-    self.raise_seal()
+    self.raise_ready()
 
   async def shutdown(self):
     if self._provider:
@@ -130,7 +130,7 @@ class DatabaseExecutionModule(BaseModule):
       return -1
     return await self._provider.execute(query, params)
   
-  def get_base_provider(self) -> BaseDatabaseTransactionProvider | None:
+  def get_primary_provider(self) -> BaseDatabaseTransactionProvider | None:
     if self._provider is None:
       logger.error("No active provider")
       return None

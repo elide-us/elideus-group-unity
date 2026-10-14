@@ -16,12 +16,12 @@ class EnvironmentVariablesModule(BaseModule):
   async def on_seal(self):
     pass
 
-  async def on_drain(self):
+  async def on_unseal(self):
     pass
   
   async def startup(self):
     self._load_all()
-    self.raise_seal()
+    self.raise_ready()
 
   async def shutdown(self):
     self._env.clear()
@@ -33,6 +33,7 @@ class EnvironmentVariablesModule(BaseModule):
       "POSTGRESQL_CONNECTION_STRING",
       "MYSQL_CONNECTION_STRING",
       "NS_HASH",
+      "SETUP_ENABLED",
     ]
 
     for var in required:

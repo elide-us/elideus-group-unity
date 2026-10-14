@@ -1,6 +1,10 @@
 from __future__ import annotations
-import os, json, uuid, re
+import os, sys, json, gzip, uuid, re
 from datetime import datetime, timezone
+
+# The kernel carries the database schema version; the installer stamps it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from server.kernel import DATABASE_VERSION
 
 import dotenv
 
@@ -70,6 +74,12 @@ def _mt() -> str:
 
 def _guid(entity_type: str, natural_key: str) -> str:
   return str(uuid.uuid5(NS_HASH, '%s:%s' % (entity_type, natural_key))).upper()
+
+
+# Package identities by formula; the kernel DDL seeds the same three values.
+KERNEL_GUID = _guid(MANIFEST_TABLE, 'kernel')
+CORE_GUID = _guid(MANIFEST_TABLE, 'core')
+SETUP_GUID = _guid(MANIFEST_TABLE, 'setup')
 
 
 def _upper_sql_functions(expr: str | None) -> str | None:
@@ -241,12 +251,19 @@ def _resolve_type_name(base_to_name: dict[str, str], sys_type: str,
   raise ValueError('unmapped sys_type: %s (no contracts_primitives_types row with matching pub_mssql_type)' % sys_type)
 
 
+# Columns the install pipeline sets itself: ownership is injected into every
+# row at register/merge time and the sealed flag is flipped by the seal phase.
+# Never seed data. The installer carries them because it IS the kernel's
+# install; a package file never does.
+PIPELINE_COLUMNS = ('ref_package_guid', 'pub_is_sealed')
+
+
 def _excluded_from_seed(column_name: str) -> bool:
   """Seed-projection rule for contracts_db_columns.pub_exclude_element:
-  priv_* timestamps come from column DEFAULT at MERGE time and
-  ref_package_guid is injected by the install pipeline, so neither is seed
-  data. generate_seed and dump read the flag; populate sets it."""
-  return column_name.startswith('priv_') or column_name == 'ref_package_guid'
+  priv_* timestamps come from column DEFAULT at MERGE time and the
+  PIPELINE_COLUMNS are set by the install pipeline, so none is seed data.
+  make_package and make_installer read the flag; populate sets it."""
+  return column_name.startswith('priv_') or column_name in PIPELINE_COLUMNS
 
 
 def _seed_order(tables: list[str], edges: list[tuple[str, str]]) -> dict[str, int]:
@@ -331,6 +348,7 @@ async def _populate_tables(conn) -> dict[str, str]:
     taken_aliases.add(alias)
     await _merge(conn, 'contracts_db_tables', 'key_guid', {
       'key_guid': g,
+      'ref_package_guid': KERNEL_GUID,
       'pub_name': r['pub_name'],
       'pub_schema': r['pub_schema'],
       'pub_alias': alias,
@@ -391,6 +409,7 @@ async def _populate_columns(conn, table_guids: dict[str, str],
       'key_guid': g,
       'ref_table_guid': table_guid,
       'ref_type_guid': type_guid,
+      'ref_package_guid': KERNEL_GUID,
       'pub_name': r['pub_name'],
       'pub_ordinal': r['pub_ordinal'],
       'pub_is_nullable': int(bool(r['pub_is_nullable'])),
@@ -410,7 +429,8 @@ async def _populate_indexes(conn, table_guids: dict[str, str]) -> dict[str, str]
          s.name AS pub_schema,
          t.name AS pub_table,
          i.name AS pub_name,
-         i.is_unique AS pub_is_unique
+         i.is_unique AS pub_is_unique,
+         CASE WHEN i.type = 1 THEN 1 ELSE 0 END AS pub_is_clustered
        FROM sys.indexes i
        JOIN sys.tables t ON i.object_id = t.object_id
        JOIN sys.schemas s ON t.schema_id = s.schema_id
@@ -430,8 +450,10 @@ async def _populate_indexes(conn, table_guids: dict[str, str]) -> dict[str, str]
     await _merge(conn, 'contracts_db_indexes', 'key_guid', {
       'key_guid': g,
       'ref_table_guid': table_guid,
+      'ref_package_guid': KERNEL_GUID,
       'pub_name': r['pub_name'],
       'pub_is_unique': int(bool(r['pub_is_unique'])),
+      'pub_is_clustered': int(bool(r['pub_is_clustered'])),
     })
     guids[natural] = g
   print('  indexes: %d' % len(guids))
@@ -470,6 +492,7 @@ async def _populate_index_columns(conn, index_guids: dict[str, str], column_guid
       'key_guid': g,
       'ref_index_guid': index_guid,
       'ref_column_guid': column_guid,
+      'ref_package_guid': KERNEL_GUID,
       'pub_ordinal': r['pub_ordinal'],
     })
     count += 1
@@ -496,15 +519,16 @@ async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, 
          k.type_desc AS sys_kind,
          rs.name AS ref_schema,
          rt.name AS ref_table_name,
-         k.delete_action AS pub_delete_disposition
+         k.delete_action AS pub_delete_disposition,
+         k.is_clustered AS pub_is_clustered
        FROM (
-         SELECT object_id, parent_object_id, name, 'PRIMARY_KEY' AS type_desc, NULL AS referenced_object_id, NULL AS delete_action FROM sys.key_constraints WHERE type='PK'
+         SELECT kc.object_id, kc.parent_object_id, kc.name, 'PRIMARY_KEY' AS type_desc, NULL AS referenced_object_id, NULL AS delete_action, CASE WHEN i.type = 1 THEN 1 ELSE 0 END AS is_clustered FROM sys.key_constraints kc JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id WHERE kc.type='PK'
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'UNIQUE'      AS type_desc, NULL,                       NULL                      FROM sys.key_constraints WHERE type='UQ'
+         SELECT kc.object_id, kc.parent_object_id, kc.name, 'UNIQUE'      AS type_desc, NULL,                       NULL,                      CASE WHEN i.type = 1 THEN 1 ELSE 0 END FROM sys.key_constraints kc JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id WHERE kc.type='UQ'
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'FOREIGN_KEY' AS type_desc, referenced_object_id,       delete_referential_action FROM sys.foreign_keys
+         SELECT object_id, parent_object_id, name, 'FOREIGN_KEY' AS type_desc, referenced_object_id,       delete_referential_action, 0 FROM sys.foreign_keys
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'CHECK'       AS type_desc, NULL,                       NULL                      FROM sys.check_constraints
+         SELECT object_id, parent_object_id, name, 'CHECK'       AS type_desc, NULL,                       NULL,                      0 FROM sys.check_constraints
        ) k
        JOIN sys.tables t ON k.parent_object_id = t.object_id
        JOIN sys.schemas s ON t.schema_id = s.schema_id
@@ -532,8 +556,10 @@ async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, 
       'ref_table_guid': table_guid,
       'ref_kind_enum_guid': kind_guid,
       'ref_referenced_table_guid': ref_table_guid,
+      'ref_package_guid': KERNEL_GUID,
       'pub_name': r['pub_name'],
       'pub_expression': None,
+      'pub_is_clustered': int(bool(r['pub_is_clustered'])),
       'pub_delete_disposition': r['pub_delete_disposition'],
     })
     guids[natural] = g
@@ -593,6 +619,7 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
       'ref_constraint_guid': constraint_guid,
       'ref_column_guid': column_guid,
       'ref_referenced_column_guid': None,
+      'ref_package_guid': KERNEL_GUID,
       'pub_ordinal': r['pub_ordinal'],
     })
     count += 1
@@ -612,6 +639,7 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
       'ref_constraint_guid': constraint_guid,
       'ref_column_guid': column_guid,
       'ref_referenced_column_guid': ref_column_guid,
+      'ref_package_guid': KERNEL_GUID,
       'pub_ordinal': r['pub_ordinal'],
     })
     count += 1
@@ -632,22 +660,23 @@ async def populate(conn) -> None:
 
 
 # =============================================================================
-# dump
+# make_installer
 # =============================================================================
 
 async def _read_table_projection(conn, table_name: str, package_guid: str | None = None,
-                                 key_guid: str | None = None) -> tuple[str, list[str], list[dict]]:
+                                 key_guid: str | tuple[str, ...] | None = None) -> tuple[str, list[str], list[dict]]:
   """Reads a table's projected columns (filtering pub_exclude_element = 1)
   and returns (schema, column_names, rows). The projection is sourced from
-  contracts_db_columns, the same way generate_seed does it; this keeps
-  the dump's seed builders consistent with the install seed format.
+  contracts_db_columns, the same way make_package does it; this keeps
+  the installer's seed builders consistent with the install seed format.
 
-  package_guid: keep ref_package_guid in the projection and return only the
-  rows that package owns; a table without the column returns every row.
-  key_guid: return only that row (the manifest's own kernel row).
+  The projection always carries the PIPELINE_COLUMNS: the installer embeds
+  them, make_package strips them.
+  package_guid: return only the rows that package owns.
+  key_guid: return only that row, or those rows (the manifest's package rows).
 
   Sort: pub_ordinal if the projection includes it, else by all projected
-  columns in their pub_ordinal order. Same rule as generate_seed."""
+  columns in their pub_ordinal order. Same rule as make_package."""
   table_row = await _query_json(
     conn,
     f"SELECT key_guid, pub_schema FROM {_kt('contracts_db_tables')} WHERE pub_name = ? FOR JSON PATH",
@@ -658,8 +687,7 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | None
   table_guid = table_row[0]['key_guid']
   schema = table_row[0]['pub_schema']
 
-  columns = await _read_seed_column_projection(
-    conn, table_guid, keep=('ref_package_guid',) if package_guid else ())
+  columns = await _read_seed_column_projection(conn, table_guid, keep=PIPELINE_COLUMNS)
   if not columns:
     return (schema, [], [])
 
@@ -669,8 +697,9 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | None
     where.append('ref_package_guid = ?')
     params.append(package_guid)
   if key_guid:
-    where.append('key_guid = ?')
-    params.append(key_guid)
+    keys = (key_guid,) if isinstance(key_guid, str) else tuple(key_guid)
+    where.append('key_guid IN (%s)' % ', '.join('?' * len(keys)))
+    params.extend(keys)
   order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
   select_list = ', '.join(columns)
   sql = (
@@ -702,7 +731,7 @@ async def _read_schema(conn) -> dict:
   )
   indexes = await _query_json(
     conn,
-    f"""SELECT key_guid, ref_table_guid, pub_name, pub_is_unique
+    f"""SELECT key_guid, ref_table_guid, pub_name, pub_is_unique, pub_is_clustered
        FROM {_kt('contracts_db_indexes')}
        ORDER BY ref_table_guid, pub_name
        FOR JSON PATH"""
@@ -718,7 +747,7 @@ async def _read_schema(conn) -> dict:
   constraints = await _query_json(
     conn,
     f"""SELECT cn.key_guid, cn.ref_table_guid, cn.ref_referenced_table_guid,
-              cn.pub_name, cn.pub_expression, cn.pub_delete_disposition,
+              cn.pub_name, cn.pub_expression, cn.pub_is_clustered, cn.pub_delete_disposition,
               e.pub_name AS kind_name
        FROM {_kt('contracts_db_constraints')} cn
        JOIN {_kt('contracts_primitives_enums')} e ON cn.ref_kind_enum_guid = e.key_guid
@@ -778,11 +807,12 @@ def _build_create_table(table: dict, columns: list[dict]) -> str:
 
 def _build_create_index(idx: dict, table: dict, idx_columns: list[dict]) -> str:
   unique = 'UNIQUE ' if idx.get('pub_is_unique') else ''
+  clustered = 'CLUSTERED ' if idx['pub_is_clustered'] else 'NONCLUSTERED '
   cols = [c for c in idx_columns if c['ref_index_guid'] == idx['key_guid']]
   cols.sort(key=lambda c: c['pub_ordinal'])
   col_list = ', '.join('[%s]' % c['column_name'] for c in cols)
-  return 'CREATE %sINDEX [%s] ON [%s].[%s] (%s);' % (
-    unique, idx['pub_name'], table['pub_schema'], table['pub_name'], col_list
+  return 'CREATE %s%sINDEX [%s] ON [%s].[%s] (%s);' % (
+    unique, clustered, idx['pub_name'], table['pub_schema'], table['pub_name'], col_list
   )
 
 
@@ -808,9 +838,9 @@ def _build_constraint(con: dict, table: dict, ref_table: dict | None,
   src_cols = ', '.join('[%s]' % c['column_name'] for c in cols)
   match con['kind_name']:
     case 'PRIMARY_KEY':
-      body = 'PRIMARY KEY (%s)' % src_cols
+      body = 'PRIMARY KEY %s (%s)' % ('CLUSTERED' if con['pub_is_clustered'] else 'NONCLUSTERED', src_cols)
     case 'UNIQUE':
-      body = 'UNIQUE (%s)' % src_cols
+      body = 'UNIQUE %s (%s)' % ('CLUSTERED' if con['pub_is_clustered'] else 'NONCLUSTERED', src_cols)
     case 'FOREIGN_KEY':
       ref_cols = ', '.join('[%s]' % c['ref_column_name'] for c in cols)
       body = 'FOREIGN KEY (%s) REFERENCES [%s].[%s] (%s)' % (
@@ -863,18 +893,18 @@ def _build_table_seed(schema: str, table_name: str, columns: list[str], rows: li
   return '\n'.join(lines) + '\n' + ',\n'.join(vals) + ';'
 
 
-async def dump(conn, prefix: str = 'schema') -> str:
+async def make_installer(conn, prefix: str = 'installer') -> str:
   print('Reading schema...')
-  # The kernel DDL is the kernel package's own install script: it embeds the
-  # kernel's manifest row and only the seed rows the kernel owns, with
-  # ref_package_guid carried through (the seed JSON leaves that to install).
-  kernel_guid = _guid(MANIFEST_TABLE, 'kernel')
-  manifest_schema, manifest_columns, manifest_rows = await _read_table_projection(conn, MANIFEST_TABLE, key_guid=kernel_guid)
-  if not manifest_rows:
-    raise ValueError('kernel package row %s not found in %s; apply the kernel manifest batch before generating' % (kernel_guid, _mt()))
-  types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types', package_guid=kernel_guid)
-  enum_types_schema, enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types', package_guid=kernel_guid)
-  enums_schema, enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums', package_guid=kernel_guid)
+  # The kernel DDL is the installer: it embeds the kernel, core and setup
+  # manifest rows, the core-owned base types in the prelude, and only the
+  # seed rows the kernel owns, with ref_package_guid carried through.
+  package_guids = (KERNEL_GUID, CORE_GUID, SETUP_GUID)
+  manifest_schema, manifest_columns, manifest_rows = await _read_table_projection(conn, MANIFEST_TABLE, key_guid=package_guids)
+  if len(manifest_rows) != len(package_guids):
+    raise ValueError('expected the kernel, core and setup rows in %s, found %d; apply the manifest batch before generating' % (_mt(), len(manifest_rows)))
+  types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types', package_guid=CORE_GUID)
+  enum_types_schema, enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types', package_guid=KERNEL_GUID)
+  enums_schema, enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums', package_guid=KERNEL_GUID)
   schema = await _read_schema(conn)
 
   table_by_guid = {t['key_guid']: t for t in schema['tables']}
@@ -896,7 +926,7 @@ async def dump(conn, prefix: str = 'schema') -> str:
     sections.append(_build_create_table(types_table, schema['columns']))
     types_constraints = [
       c for c in schema['constraints']
-      if c['ref_table_guid'] == types_table['key_guid']
+      if c['ref_table_guid'] == types_table['key_guid'] and c['kind_name'] != 'FOREIGN_KEY'
     ]
     for con in types_constraints:
       ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
@@ -915,6 +945,14 @@ async def dump(conn, prefix: str = 'schema') -> str:
     sections.append(_build_create_table(table, schema['columns']))
   sections.append('GO')
   sections.append(_build_table_seed(manifest_schema, MANIFEST_TABLE, manifest_columns, manifest_rows))
+  sections.append('GO')
+  sections.append('')
+
+  # The database schema version the kernel was built for, keyed by formula.
+  sections.append(_build_table_seed(MANIFEST_SCHEMA, 'service_system_configuration',
+    ['key_guid', 'ref_package_guid', 'pub_key', 'pub_value'],
+    [{'key_guid': _guid('service_system_configuration', 'database_version'), 'ref_package_guid': KERNEL_GUID,
+      'pub_key': 'database_version', 'pub_value': DATABASE_VERSION}]))
   sections.append('GO')
   sections.append('')
 
@@ -959,8 +997,6 @@ async def dump(conn, prefix: str = 'schema') -> str:
     table = table_by_guid.get(con['ref_table_guid'])
     if not table:
       continue
-    if types_table and con['ref_table_guid'] == types_table['key_guid']:
-      continue
     ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
     sections.append(_build_constraint(con, table, ref_table, schema['constraint_columns']))
 
@@ -968,7 +1004,7 @@ async def dump(conn, prefix: str = 'schema') -> str:
   filename = '%s_%s.sql' % (prefix, ts)
   with open(filename, 'w') as f:
     f.write('\n'.join(sections))
-  print('Schema dumped to %s' % filename)
+  print('Installer written to %s' % filename)
   return filename
 
 
@@ -991,11 +1027,11 @@ async def apply(conn, path: str) -> None:
   
 
 # =============================================================================
-# generate_seed
+# make_package
 # =============================================================================
 #
-# Generates a kernel-package seed JSON file by reading the contracts_db_*
-# cluster directly. Fully data-driven: the seed table list, the install
+# Exports ONE package — the rows it owns across the seed tables — as
+# <name>.json.gz. Fully data-driven: the seed table list, the install
 # order, and the per-table column projections all come from the database.
 #
 # Seed-set membership and load order: contracts_db_tables.pub_seed_element.
@@ -1003,10 +1039,10 @@ async def apply(conn, path: str) -> None:
 # it from FK dependency depth, see _seed_order).
 #
 # Per-table projection: every column on the table except priv_* timestamps
-# and ref_package_guid (contracts_db_columns.pub_exclude_element, which
-# populate sets by the _excluded_from_seed rule). Both are install-pipeline
+# and the PIPELINE_COLUMNS (contracts_db_columns.pub_exclude_element, which
+# populate sets by the _excluded_from_seed rule). All are install-pipeline
 # concerns, not seed-data concerns — timestamps come from column DEFAULT at
-# MERGE time, ref_package_guid is auto-injected by the install pipeline.
+# MERGE time, ownership and the sealed flag are set by the install pipeline.
 #
 # Per-table row sort: pub_ordinal if the table has it (junction tables and
 # anything else where ordinal is meaningful), otherwise the projected
@@ -1033,9 +1069,9 @@ async def _read_seed_column_projection(conn, table_guid: str,
                                        keep: tuple[str, ...] = ()) -> list[str]:
   """Returns the projected column names for a seed table, in pub_ordinal
   order. Excludes columns flagged with pub_exclude_element = 1, except any
-  named in keep. dump keeps ref_package_guid: the kernel DDL is the kernel
-  package's own install, so its embedded seeds carry ownership; the seed
-  JSON never does, install injects it."""
+  named in keep. The installer keeps the PIPELINE_COLUMNS: the kernel DDL is
+  the kernel package's own install, so its embedded seeds carry ownership
+  and the sealed flag; a package file never does, install sets them."""
   rows = await _query_json(
     conn,
     f"""SELECT pub_name, pub_exclude_element
@@ -1047,53 +1083,40 @@ async def _read_seed_column_projection(conn, table_guid: str,
   )
   return [r['pub_name'] for r in rows if not r['pub_exclude_element'] or r['pub_name'] in keep]
 
-async def generate_seed(conn, prefix: str = 'kernel_seed',
-                        package: str = 'kernel',
-                        version: str = '1.0.0') -> None:
-  """Read seed-flagged rows from contracts_db_*, emit as a seed JSON file."""
-  seed_tables = await _read_seed_table_list(conn)
-  if not seed_tables:
-    print('No seed tables found (no contracts_db_tables rows with pub_seed_element > 0).')
-    return
+async def make_package(conn, name: str = 'kernel') -> None:
+  """Export ONE package: every row it owns across the seed tables, in install
+  order, as <name>.json.gz — its own manifest row included, since a package
+  owns that row. The version comes from the manifest row. The PIPELINE_COLUMNS
+  are not exported: install sets them."""
+  pkg_guid = _guid(MANIFEST_TABLE, name)
+  manifest = await _query_json(
+    conn,
+    f"SELECT pub_version FROM {_mt()} WHERE key_guid = ? FOR JSON PATH",
+    (pkg_guid,)
+  )
+  if not manifest:
+    raise ValueError('package %s (%s) not found in %s' % (name, pkg_guid, _mt()))
+  version = manifest[0]['pub_version']
 
+  seed_tables = await _read_seed_table_list(conn)
   rows: list[dict] = []
   counts: dict[str, int] = {}
-
   for t in seed_tables:
     table_name = t['pub_name']
-    columns = await _read_seed_column_projection(conn, t['key_guid'])
-    if not columns:
-      counts[table_name] = 0
-      continue
-
-    # Sort by pub_ordinal if the table has it, else by the projected columns.
-    order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
-
-    select_list = ', '.join(columns)
-    sql = (
-      'SELECT %s FROM %s ORDER BY %s '
-      'FOR JSON PATH, INCLUDE_NULL_VALUES'
-    ) % (select_list, _qt(t['pub_schema'], table_name), order_by)
-    table_rows = await _query_json(conn, sql)
+    _, _, table_rows = await _read_table_projection(conn, table_name, package_guid=pkg_guid)
     for row in table_rows:
-      rows.append({'schema': t['pub_schema'], 'table': table_name, 'data': row})
+      rows.append({'schema': t['pub_schema'], 'table': table_name,
+                   'data': {k: v for k, v in row.items() if k not in PIPELINE_COLUMNS}})
     counts[table_name] = len(table_rows)
 
-  package_doc = {
-    'package': package,
-    'version': version,
-    'rows': rows,
-  }
+  filename = '%s.json.gz' % name
+  with gzip.open(filename, 'wt', encoding='utf-8') as f:
+    json.dump({'package': name, 'version': version, 'rows': rows}, f, indent=2)
 
-  ts = datetime.now(timezone.utc).strftime('%Y%m%d')
-  filename = '%s_%s.json' % (prefix, ts)
-  with open(filename, 'w') as f:
-    json.dump(package_doc, f, indent=2)
-
-  print('Generated seed: %s' % filename)
-  print('  package: %s v%s' % (package, version))
-  for t in seed_tables:
-    print('  %-40s %d' % (t['pub_name'], counts[t['pub_name']]))
+  print('Package written to %s' % filename)
+  print('  package: %s v%s' % (name, version))
+  for table_name, count in counts.items():
+    print('  %-40s %d' % (table_name, count))
   print('  total: %d rows' % len(rows))
 
 
@@ -1186,8 +1209,8 @@ async def _existing_table_names(conn) -> set[str]:
 
 async def _materialize(conn) -> None:
   """Phase 2. Read contracts_db_*, find tables declared but not in sys.tables,
-  generate and execute DDL for them. Reuses the same builders dump uses, so
-  output is identical to what dump would emit for those tables."""
+  generate and execute DDL for them. Reuses the same builders make_installer uses, so
+  output is identical to what make_installer would emit for those tables."""
   schema = await _read_schema(conn)
   existing = await _existing_table_names(conn)
 
@@ -1294,8 +1317,9 @@ def _print_counts(counts: dict[str, int]) -> None:
 
 async def install(conn, path: str) -> None:
   # Read package
+  opener = gzip.open if path.endswith('.gz') else open
   try:
-    with open(path, 'r') as f:
+    with opener(path, 'rt', encoding='utf-8') as f:
       package = json.load(f)
   except FileNotFoundError:
     print('Error: package file not found: %s' % path)
@@ -1324,11 +1348,12 @@ async def install(conn, path: str) -> None:
 
   manifest_guid = _guid(MANIFEST_TABLE, pkg_name)
 
-  # ---- Phase 1: register (manifest row, unsealed) ----
+  # ---- Phase 1: register (manifest row, owned by itself, unsealed) ----
   print('Phase 1: register')
   try:
     await _merge(conn, MANIFEST_TABLE, 'key_guid', {
       'key_guid': manifest_guid,
+      'ref_package_guid': manifest_guid,
       'pub_name': pkg_name,
       'pub_version': pkg_version,
       'pub_last_version': pkg_version,

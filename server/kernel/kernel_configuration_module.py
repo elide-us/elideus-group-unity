@@ -2,8 +2,9 @@ import logging
 
 from fastapi import FastAPI
 
-from . import BaseModule
+from . import BaseModule, DATABASE_VERSION
 from .database_execution_module import DatabaseExecutionModule
+from .environment_variables_module import EnvironmentVariablesModule
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -46,30 +47,50 @@ class KernelConfigurationModule(BaseModule):
 
   async def startup(self):
     db = self.get_module(DatabaseExecutionModule)
-    await db.on_sealed()
+    await db.await_ready()
 
     bootstrap_sql = """
-      SELECT pub_key, pub_value
-      FROM service_system_configuration
+      SELECT
+        [ssc].[pub_key],
+        [ssc].[pub_value]
+      FROM [dbo].[service_system_configuration] AS [ssc]
       FOR JSON PATH;
     """
     raw = await db.query(bootstrap_sql)
-    if raw is None:
-      logger.warning("No config rows (empty table)")
-      self.raise_seal()
-      return
-
-    rows = raw if isinstance(raw, list) else [raw]
+    rows = [] if raw is None else raw if isinstance(raw, list) else [raw]
     for entry in rows:
       self._cache[entry["pub_key"]] = entry.get("pub_value")
 
     logger.info("Loaded %d config entries", len(self._cache))
-    self.raise_seal()
+    self._check_database_version()
+    self.raise_ready()
+
+  def _check_database_version(self):
+    # The kernel refuses to run against a database at another schema version.
+    # Setup mode is where migration happens.
+    setup_enabled = self.get_module(EnvironmentVariablesModule).get("SETUP_ENABLED") == "1"
+    database_version = self._cache.get("database_version")
+    if database_version == DATABASE_VERSION:
+      logger.info("Database version %s matches the kernel", database_version)
+      return
+    if database_version is None:
+      message = "database_version is not set; this database has not been initialised (kernel %s)" % DATABASE_VERSION
+    elif tuple(int(p) for p in database_version.split('.')) < tuple(int(p) for p in DATABASE_VERSION.split('.')):
+      if setup_enabled:
+        logger.info("HERE IS WHERE WE WOULD MIGRATE THE DATABASE TO THE NEW SCHEMA (%s -> %s)", database_version, DATABASE_VERSION)
+        # This becomes a reboot action once the migration has run. Until the
+        # upgrade script exists, stop here as a success so we never loop.
+        raise SystemExit(0)
+      message = "database version %s is older than the kernel %s; set SETUP_ENABLED=1 to migrate the database" % (database_version, DATABASE_VERSION)
+    else:
+      message = "database version %s is newer than the kernel %s; apply this version of container: %s" % (database_version, DATABASE_VERSION, database_version)
+    logger.error(message)
+    raise RuntimeError(message)
 
   async def on_seal(self):
     pass
 
-  async def on_drain(self):
+  async def on_unseal(self):
     pass
 
   async def shutdown(self):

@@ -84,7 +84,7 @@ class DatabaseOperationsModule(BaseModule):
 
   async def startup(self):
     self._db = self.get_module(DatabaseExecutionModule)
-    await self._db.on_sealed()
+    await self._db.await_ready()
 
     env = self.get_module(EnvironmentVariablesModule)
 
@@ -100,28 +100,31 @@ class DatabaseOperationsModule(BaseModule):
         return
 
     bootstrap_sql = f"""
-      SELECT pub_op, {self._query_column} AS query
-      FROM [etg].contracts_db_operations
-      WHERE pub_bootstrap_element = 1 AND {self._query_column} IS NOT NULL
+      SELECT
+        [cdo].[pub_op],
+        [cdo].[{self._query_column}]
+      FROM [etg].[contracts_db_operations] AS [cdo]
+      WHERE [cdo].[pub_bootstrap_element] = 1
+        AND [cdo].[{self._query_column}] IS NOT NULL
       FOR JSON PATH;
     """
     raw = await self._db.query(bootstrap_sql)
     if raw is None:
       logger.info("No operations found (empty or unseeded)")
-      self.raise_seal()
+      self.raise_ready()
       return
 
     ops = raw if isinstance(raw, list) else [raw]
     for entry in ops:
-      self._registry[entry["pub_op"]] = entry["query"]
+      self._registry[entry["pub_op"]] = entry[self._query_column]
 
     logger.info("Loaded %d operations", len(self._registry))
-    self.raise_seal()
+    self.raise_ready()
 
   async def on_seal(self):
     pass
 
-  async def on_drain(self):
+  async def on_unseal(self):
     pass
 
   async def shutdown(self):
@@ -129,17 +132,18 @@ class DatabaseOperationsModule(BaseModule):
 
   async def _load_op(self, op: str) -> str | None:
     sql = f"""
-      SELECT {self._query_column} AS query
-      FROM [etg].contracts_db_operations
-      WHERE pub_op = ?
-      AND {self._query_column} IS NOT NULL
+      SELECT
+        [cdo].[{self._query_column}]
+      FROM [etg].[contracts_db_operations] AS [cdo]
+      WHERE [cdo].[pub_op] = ?
+        AND [cdo].[{self._query_column}] IS NOT NULL
       FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
     """
     raw = await self._db.query(sql, (op,))
     if raw is None:
       logger.error("Unable to load op '%s'", op)
       return None
-    self._registry[op] = raw["query"]
+    self._registry[op] = raw[self._query_column]
     return self._registry[op]
 
   def _flush(self, op: str):

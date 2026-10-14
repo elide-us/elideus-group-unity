@@ -47,49 +47,52 @@ class KernelEnumModule(BaseModule):
 
   async def startup(self):
     self._db = self.get_module(DatabaseExecutionModule)
-    await self._db.on_sealed()
+    await self._db.await_ready()
 
+    # AS [alias] is required when using FOR JSON PATH for key naming purposes
     bootstrap_sql = """
       SELECT
-        et.pub_name AS type_name,
+        [cpet].[pub_name],
         (
-          SELECT e.pub_name AS name, e.pub_value AS value
-          FROM [etg].contracts_primitives_enums e
-          WHERE e.ref_enum_type_guid = et.key_guid
-          ORDER BY e.pub_value
+          SELECT
+            [cpe].[pub_name],
+            [cpe].[pub_value]
+          FROM [etg].[contracts_primitives_enums] AS [cpe]
+          WHERE [cpe].[ref_enum_type_guid] = [cpet].[key_guid]
+          ORDER BY [cpe].[pub_value]
           FOR JSON PATH
-        ) AS members
-      FROM [etg].contracts_primitives_enum_types et
-      ORDER BY et.pub_name
+        ) AS [cpe_members]
+      FROM [etg].[contracts_primitives_enum_types] AS [cpet]
+      ORDER BY [cpet].[pub_name]
       FOR JSON PATH;
     """
     raw = await self._db.query(bootstrap_sql)
     if raw is None:
       logger.warning("No enum types found (empty tables)")
-      self.raise_seal()
+      self.raise_ready()
       return
 
     rows = raw if isinstance(raw, list) else [raw]
     for row in rows:
-      type_name = row["type_name"]
-      members = row["members"]
+      type_name = row["pub_name"]
+      members = row["cpe_members"]
       if not members:
         logger.warning("Enum type '%s' has no members; no class constructed", type_name)
         continue
       self._cache[type_name] = IntEnum(
         snake_to_pascal(type_name),
-        {m["name"]: int(m["value"]) for m in members}
+        {m["pub_name"]: int(m["pub_value"]) for m in members}
       )
 
     logger.info("Loaded %d enum classes (%d total members)",
                 len(self._cache),
                 sum(len(c) for c in self._cache.values()))
-    self.raise_seal()
+    self.raise_ready()
 
   async def on_seal(self):
     pass
 
-  async def on_drain(self):
+  async def on_unseal(self):
     pass
 
   async def shutdown(self):
