@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-from scriptlib import connect, dump, install, list_packages, uninstall, generate_seed, populate
+from scriptlib import connect, make_installer, install, list_packages, uninstall, make_package, populate
 
 
 HELP_TEXT = """\
@@ -10,9 +10,9 @@ Available commands:
   exit, quit                    Exit the console
   reconnect <dbname>            Connect to a different database
   populate                      Reflect sys.* into contracts_db_* (fill kernel tables)
-  generate kernel [name]        Read contracts_db_*, write <name>_YYYYMMDD.sql
-  generate seed [name]          Read kernel rows from contracts_db_*, write <name>_YYYYMMDD.json
-  install <file>                Run package install pipeline (register → schema → materialize → data → seal)
+  make installer [name]         Read contracts_db_*, write <name>_YYYYMMDD.sql (the kernel installer)
+  make package [name]           Export one package's owned rows -> <name>.json.gz (default: kernel)
+  install <file>                Install a package file (.json or .json.gz): register → schema → materialize → data → seal
   list packages                 Show installed packages and row ownership
   uninstall <name>              Show uninstall plan (dry run)
   uninstall <name> confirm      Execute uninstall
@@ -43,26 +43,26 @@ async def interactive_console(conn):
           await populate(conn)
         except Exception as e:
           print('Error populating: %s' % e)
-      case ['generate', 'kernel']:
+      case ['make', 'installer']:
         try:
-          await dump(conn)
+          await make_installer(conn)
         except Exception as e:
-          print('Error generating kernel: %s' % e)
-      case ['generate', 'kernel', name]:
+          print('Error making installer: %s' % e)
+      case ['make', 'installer', name]:
         try:
-          await dump(conn, name)
+          await make_installer(conn, name)
         except Exception as e:
-          print('Error generating kernel: %s' % e)
-      case ['generate', 'seed']:
+          print('Error making installer: %s' % e)
+      case ['make', 'package']:
         try:
-          await generate_seed(conn)
+          await make_package(conn)
         except Exception as e:
-          print('Error generating seed: %s' % e)
-      case ['generate', 'seed', name]:
+          print('Error making package: %s' % e)
+      case ['make', 'package', name]:
         try:
-          await generate_seed(conn, name)
+          await make_package(conn, name)
         except Exception as e:
-          print('Error generating seed: %s' % e)
+          print('Error making package: %s' % e)
       case ['install', path]:
         try:
           await install(conn, path)

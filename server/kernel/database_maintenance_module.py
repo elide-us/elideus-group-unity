@@ -10,21 +10,21 @@ logger = logging.getLogger(__name__.split('.')[-1])
 class DatabaseMaintenanceModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
-    self._ops: DatabaseOperationsModule | None = None
+    self._database: DatabaseOperationsModule | None = None
 
   async def startup(self):
-    self._ops = self.get_module(DatabaseOperationsModule)
-    await self._ops.on_sealed()
-    self.raise_seal()
+    self._database = self.get_module(DatabaseOperationsModule)
+    await self._database.await_ready()
+    self.raise_ready()
 
   async def on_seal(self):
     await super().on_seal()
 
-  async def on_drain(self):
+  async def on_unseal(self):
     pass
 
   async def shutdown(self):
-    self._ops = None
+    self._database = None
 
   async def reconcile_schema(self) -> None:
     pass
