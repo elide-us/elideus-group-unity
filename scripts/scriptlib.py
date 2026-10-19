@@ -252,10 +252,16 @@ def _resolve_type_name(base_to_name: dict[str, str], sys_type: str,
 
 
 # Columns the install pipeline sets itself: ownership is injected into every
-# row at register/merge time and the sealed flag is flipped by the seal phase.
+# row at register/merge time, the sealed flag is flipped by the seal phase,
+# and the previous version is read from the manifest row being replaced.
 # Never seed data. The installer carries them because it IS the kernel's
 # install; a package file never does.
-PIPELINE_COLUMNS = ('ref_package_guid', 'pub_is_sealed')
+PIPELINE_COLUMNS = ('ref_package_guid', 'pub_is_sealed', 'pub_last_version')
+
+# The tables populate derives from the live schema. The installer never embeds
+# their rows: the DDL it emits IS their source, and populate regenerates them.
+REFLECTED_TABLES = ('contracts_db_tables', 'contracts_db_columns', 'contracts_db_indexes',
+                    'contracts_db_index_columns', 'contracts_db_constraints', 'contracts_db_constraint_columns')
 
 
 def _excluded_from_seed(column_name: str) -> bool:
@@ -663,7 +669,7 @@ async def populate(conn) -> None:
 # make_installer
 # =============================================================================
 
-async def _read_table_projection(conn, table_name: str, package_guid: str | None = None,
+async def _read_table_projection(conn, table_name: str, package_guid: str | tuple[str, ...] | None = None,
                                  key_guid: str | tuple[str, ...] | None = None) -> tuple[str, list[str], list[dict]]:
   """Reads a table's projected columns (filtering pub_exclude_element = 1)
   and returns (schema, column_names, rows). The projection is sourced from
@@ -672,7 +678,7 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | None
 
   The projection always carries the PIPELINE_COLUMNS: the installer embeds
   them, make_package strips them.
-  package_guid: return only the rows that package owns.
+  package_guid: return only the rows that package (or those packages) own.
   key_guid: return only that row, or those rows (the manifest's package rows).
 
   Sort: pub_ordinal if the projection includes it, else by all projected
@@ -694,8 +700,9 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | None
   where: list[str] = []
   params: list = []
   if package_guid and 'ref_package_guid' in columns:
-    where.append('ref_package_guid = ?')
-    params.append(package_guid)
+    owners = (package_guid,) if isinstance(package_guid, str) else tuple(package_guid)
+    where.append('ref_package_guid IN (%s)' % ', '.join('?' * len(owners)))
+    params.extend(owners)
   if key_guid:
     keys = (key_guid,) if isinstance(key_guid, str) else tuple(key_guid)
     where.append('key_guid IN (%s)' % ', '.join('?' * len(keys)))
@@ -903,8 +910,16 @@ async def make_installer(conn, prefix: str = 'installer') -> str:
   if len(manifest_rows) != len(package_guids):
     raise ValueError('expected the kernel, core and setup rows in %s, found %d; apply the manifest batch before generating' % (_mt(), len(manifest_rows)))
   types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types', package_guid=CORE_GUID)
-  enum_types_schema, enum_types_columns, enum_types = await _read_table_projection(conn, 'contracts_primitives_enum_types', package_guid=KERNEL_GUID)
-  enums_schema, enums_columns, enums = await _read_table_projection(conn, 'contracts_primitives_enums', package_guid=KERNEL_GUID)
+  # Authored seed rows: every seed table in install order, the rows the three
+  # shipped packages own. Tables already emitted above and the reflected
+  # metadata tables are skipped.
+  seeds: list[tuple[str, str, list[str], list[dict]]] = []
+  for t in await _read_seed_table_list(conn):
+    if t['pub_name'] in REFLECTED_TABLES + (MANIFEST_TABLE, 'service_system_configuration', 'contracts_primitives_types'):
+      continue
+    seed_schema, seed_columns, seed_rows = await _read_table_projection(conn, t['pub_name'], package_guid=package_guids)
+    if seed_rows:
+      seeds.append((seed_schema, t['pub_name'], seed_columns, seed_rows))
   schema = await _read_schema(conn)
 
   table_by_guid = {t['key_guid']: t for t in schema['tables']}
@@ -956,12 +971,9 @@ async def make_installer(conn, prefix: str = 'installer') -> str:
   sections.append('GO')
   sections.append('')
 
-  if enums:
-    sections.append('-- contracts_primitives_enum_types seed')
-    sections.append(_build_table_seed(enum_types_schema, 'contracts_primitives_enum_types', enum_types_columns, enum_types))
-    sections.append('')
-    sections.append('-- contracts_primitives_enums seed')
-    sections.append(_build_table_seed(enums_schema, 'contracts_primitives_enums', enums_columns, enums))
+  for seed_schema, seed_table, seed_columns, seed_rows in seeds:
+    sections.append('-- %s seed' % seed_table)
+    sections.append(_build_table_seed(seed_schema, seed_table, seed_columns, seed_rows))
     sections.append('')
 
   sections.append('-- Indexes')
@@ -1348,18 +1360,21 @@ async def install(conn, path: str) -> None:
 
   manifest_guid = _guid(MANIFEST_TABLE, pkg_name)
 
-  # ---- Phase 1: register (manifest row, owned by itself, unsealed) ----
+  # ---- Phase 1: register (manifest row, owned by itself, unsealed; the
+  # version being replaced becomes pub_last_version) ----
   print('Phase 1: register')
   try:
+    existing = await _query_json(
+      conn, f"SELECT pub_version FROM {_mt()} WHERE key_guid = ? FOR JSON PATH", (manifest_guid,))
     await _merge(conn, MANIFEST_TABLE, 'key_guid', {
       'key_guid': manifest_guid,
       'ref_package_guid': manifest_guid,
       'pub_name': pkg_name,
       'pub_version': pkg_version,
-      'pub_last_version': pkg_version,
+      'pub_last_version': existing[0]['pub_version'] if existing else None,
       'pub_is_sealed': 0,
     }, schema=MANIFEST_SCHEMA)
-    print('    %s v%s registered (unsealed)' % (pkg_name, pkg_version))
+    print('    %s v%s registered (unsealed, replacing %s)' % (pkg_name, pkg_version, existing[0]['pub_version'] if existing else 'nothing'))
   except Exception as e:
     print('  FAILED: %s' % e)
     return
