@@ -681,8 +681,7 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | tupl
   package_guid: return only the rows that package (or those packages) own.
   key_guid: return only that row, or those rows (the manifest's package rows).
 
-  Sort: pub_ordinal if the projection includes it, else by all projected
-  columns in their pub_ordinal order. Same rule as make_package."""
+  Sort: key_guid (the clustered key), the same for every table."""
   table_row = await _query_json(
     conn,
     f"SELECT key_guid, pub_schema FROM {_kt('contracts_db_tables')} WHERE pub_name = ? FOR JSON PATH",
@@ -707,7 +706,8 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | tupl
     keys = (key_guid,) if isinstance(key_guid, str) else tuple(key_guid)
     where.append('key_guid IN (%s)' % ', '.join('?' * len(keys)))
     params.extend(keys)
-  order_by = 'pub_ordinal' if 'pub_ordinal' in columns else ', '.join(columns)
+  # Clustered key order: no sort, deterministic, not for human reading.
+  order_by = 'key_guid'
   select_list = ', '.join(columns)
   sql = (
     'SELECT %s FROM %s%s ORDER BY %s '
@@ -1056,10 +1056,8 @@ async def apply(conn, path: str) -> None:
 # concerns, not seed-data concerns — timestamps come from column DEFAULT at
 # MERGE time, ownership and the sealed flag are set by the install pipeline.
 #
-# Per-table row sort: pub_ordinal if the table has it (junction tables and
-# anything else where ordinal is meaningful), otherwise the projected
-# columns in their pub_ordinal order. Output is for install scripts, not
-# human reading — the goal is determinism, not aesthetics.
+# Per-table row sort: key_guid, the clustered key. Output is for install
+# scripts, not human reading — no sort, deterministic.
 #
 # Output is the flat-rows shape consumed by install:
 #   {package, version, rows: [{schema, table, data}, ...]}
@@ -1361,11 +1359,12 @@ async def install(conn, path: str) -> None:
   manifest_guid = _guid(MANIFEST_TABLE, pkg_name)
 
   # ---- Phase 1: register (manifest row, owned by itself, unsealed; the
-  # version being replaced becomes pub_last_version) ----
+  # sealed version being replaced becomes pub_last_version; NULL on a first
+  # install, where the installer's unsealed row is not a previous version) ----
   print('Phase 1: register')
   try:
     existing = await _query_json(
-      conn, f"SELECT pub_version FROM {_mt()} WHERE key_guid = ? FOR JSON PATH", (manifest_guid,))
+      conn, f"SELECT pub_version FROM {_mt()} WHERE key_guid = ? AND pub_is_sealed = 1 FOR JSON PATH", (manifest_guid,))
     await _merge(conn, MANIFEST_TABLE, 'key_guid', {
       'key_guid': manifest_guid,
       'ref_package_guid': manifest_guid,
