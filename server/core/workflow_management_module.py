@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from server.kernel import BaseModule
 from server.kernel.database_operations_module import DatabaseOperationsModule
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
+from server.kernel.kernel_configuration_module import KernelConfigurationModule
 from server.helpers import discover_classes, deterministic_guid
 from .workflow_execution_providers import BaseWorkflowManagementProvider, BaseWorkflowTaskProvider, BaseWorkflowTaskWorker
 
@@ -64,7 +65,9 @@ class WorkflowSteps(BaseModel):
 #   run_once() -> bool                              claim, dispatch, record; False when the queue is empty
 #
 # -- Dependencies ------------------------------------------------------------
-#   DatabaseOperationsModule, EnvironmentVariablesModule (NS_HASH)
+#   DatabaseOperationsModule, EnvironmentVariablesModule (NS_HASH),
+#   KernelConfigurationModule (stale_grace_seconds = the stale-claim sweep,
+#   workflow_poll_seconds = the worker cadence on an empty queue)
 #   workflow_execution_providers/*_provider, *_worker
 # ----------------------------------------------------------------------------
 
@@ -74,8 +77,10 @@ WORKER = "workflow_task_worker"
 BATCH_SEQUENCE = "workflow_batch"
 STATUSES = ("PENDING", "RUNNING", "COMPLETE", "FAILED", "CANCELLING")
 DISPOSITIONS = ("REVERSIBLE", "IRREVERSIBLE", "TRANSIENT", "CANCELLABLE")
-# A RUNNING row older than this with no outcome is a claim its node abandoned.
-STALE_GRACE_SECONDS = 300
+# A RUNNING row older than the grace with no outcome is a claim its node abandoned;
+# the grace is the stale_grace_seconds configuration row, shared with the host sweep.
+GRACE_KEY = "stale_grace_seconds"
+POLL_KEY = "workflow_poll_seconds"
 
 
 class WorkflowManagementModule(BaseModule):
@@ -86,6 +91,8 @@ class WorkflowManagementModule(BaseModule):
     self._task_provider: BaseWorkflowTaskProvider | None = None
     self._worker: BaseWorkflowTaskWorker | None = None
     self._namespace: uuid.UUID | None = None
+    self._grace: int = 0
+    self._poll: int = 0
     self._definitions: dict[str, dict] = {}
     self._status: dict[str, str] = {}
     self._disposition: dict[str, str] = {}
@@ -99,6 +106,10 @@ class WorkflowManagementModule(BaseModule):
     env = self.get_module(EnvironmentVariablesModule)
     await env.await_ready()
     self._namespace = uuid.UUID(env.get("NS_HASH"))
+    configuration = self.get_module(KernelConfigurationModule)
+    await configuration.await_ready()
+    self._grace = int(configuration.get(GRACE_KEY))
+    self._poll = int(configuration.get(POLL_KEY))
     self._status = {n: deterministic_guid(self._namespace, "contracts_primitives_enums", "task_status.%s" % n) for n in STATUSES}
     self._disposition = {n: deterministic_guid(self._namespace, "contracts_primitives_enums", "task_disposition.%s" % n) for n in DISPOSITIONS}
     self._sequence_guid = deterministic_guid(self._namespace, "service_sequences", BATCH_SEQUENCE)
@@ -110,7 +121,7 @@ class WorkflowManagementModule(BaseModule):
     await self._definitions_provider.connect()
     await self._task_provider.connect()
     await self._reload()
-    self._worker = workers[WORKER](self)
+    self._worker = workers[WORKER](self, self._poll)
     await self._worker.start()
     self.raise_ready()
 
@@ -192,7 +203,7 @@ class WorkflowManagementModule(BaseModule):
   async def on_seal(self):
     # Stale-claim recovery: a RUNNING row past the grace period belongs to a
     # node that died; it goes back to PENDING and the attempt it took counts.
-    released = await self._task_provider.release_stale(self._status["PENDING"], self._status["RUNNING"], STALE_GRACE_SECONDS)
+    released = await self._task_provider.release_stale(self._status["PENDING"], self._status["RUNNING"], self._grace)
     if released:
       logger.warning("Released %d stale workflow claim(s)", released)
 
