@@ -119,6 +119,15 @@ class KernelModuleManager:
       return None
     return instance
 
+  def get_module_by_name(self, name: str) -> BaseModule | None:
+    # A contract names a module by its class name (a workflow step, later an
+    # RPC contract row); the registry answers by name as it does by type.
+    for module_class, instance in self._instances.items():
+      if module_class.__name__ == name:
+        return instance
+    logger.error("'%s' not registered", name)
+    return None
+
   def _discover_and_register(self):
     for module_class in discover_classes(__package__, "_module").values():
       self._instances[module_class] = module_class(self.app)

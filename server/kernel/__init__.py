@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # Database schema version this kernel is built for. Setup mode compares it
 # with the database_version configuration row; the installer and migration
 # scripts are generated from it.
-DATABASE_VERSION = "0.1.1"
+DATABASE_VERSION = "0.1.2"
 
 T = TypeVar("T", bound="BaseModule")
 

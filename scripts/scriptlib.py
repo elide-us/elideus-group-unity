@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 # The kernel carries the database schema version; the installer stamps it.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from server.kernel import DATABASE_VERSION
+from server.helpers import pascal_to_snake
 
 import dotenv
 
@@ -753,7 +754,8 @@ async def _populate_procedures(conn) -> int:
 _PY_TO_TYPE = {'str': 'STRING', 'int': 'INT32', 'bool': 'BOOL', 'float': 'FLOAT64', 'bytes': 'BINARY'}
 _UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'KernelModuleManager', 'BaseDatabaseTransactionProvider'}
 _COLLECTION_NAMES = {'list', 'set', 'Iterable'}
-_RECORD_MODELS = {'DBRequest': 'db_request'}
+_RECORD_MODELS = {'DBRequest': 'db_request'}   # + every Pydantic BaseModel class, registered at reflection
+_RECORD_MODEL_BASE = 'BaseModel'
 _ROOT_BASES = ('BaseModule', 'BaseProvider', 'BaseWorker')
 
 
@@ -942,10 +944,35 @@ def _signature(graph: _ModuleGraph, cls_name: str, fn, owner: str) -> tuple[str,
   return input_model, output_model, ('DEFECT untyped: ' + '; '.join(notes)) if notes else None
 
 
+def _register_record_models(graph: _ModuleGraph) -> None:
+  """A Pydantic model class in a module file is a record model: a row in
+  contracts_modules_models with one field per annotated attribute, named
+  pascal_to_snake(class). Names register first so a model may reference a
+  model defined later; the classes leave the module family afterwards."""
+  records = [n for n in graph.order if _RECORD_MODEL_BASE in graph.classes[n]['bases']]
+  for name in records:
+    _RECORD_MODELS[name] = pascal_to_snake(name)
+  for name in records:
+    info = graph.classes[name]
+    fields = []
+    for node in info['node'].body:
+      if not isinstance(node, ast.AnnAssign) or not isinstance(node.target, ast.Name):
+        continue
+      slot = _parse_annotation(node.annotation)
+      if slot is None:
+        raise ValueError('%s.%s: a model field cannot be None-typed' % (name, node.target.id))
+      fields.append(_Field(node.target.id, slot, _default_literal(node.value)))
+    graph.add_model(_RECORD_MODELS[name], info['owner'], fields,
+                    '%s (pydantic): %s' % (name, info['path']))
+    del graph.classes[name]
+    graph.order.remove(name)
+
+
 def _reflect_modules(root: str) -> _ModuleGraph:
   graph = _ModuleGraph()
   _collect_classes(graph, root, 'kernel', KERNEL_GUID)
   _collect_classes(graph, root, 'core', CORE_GUID)
+  _register_record_models(graph)
   # keep only the module family: the three roots and everything under them
   for name in list(graph.order):
     if graph.root(name) is None and not name.endswith('Provider'):   # composed providers stand alone
