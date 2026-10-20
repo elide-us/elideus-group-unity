@@ -7,7 +7,8 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 class MssqlTransactionProvider(BaseDatabaseTransactionProvider):
   async def connect(self):
-    self.pool = await aioodbc.create_pool(dsn=self._dsn, minsize=1, maxsize=5)
+    # autocommit: every statement commits on its own; a write through the kernel is atomic by itself.
+    self.pool = await aioodbc.create_pool(dsn=self._dsn, minsize=1, maxsize=5, autocommit=True)
     logger.info("Connection pool created")
 
   async def disconnect(self):
