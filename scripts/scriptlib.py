@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, sys, json, gzip, uuid, re
+import os, sys, json, gzip, uuid, re, ast
 from datetime import datetime, timezone
 
 # The kernel carries the database schema version; the installer stamps it.
@@ -200,6 +200,8 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 #                      sys.foreign_keys.delete_referential_action, whose 0..3
 #                      numbering is the constraint_disposition enum)
 #   6. Constr cols  -> contracts_db_constraint_columns
+#   7. Modules      -> contracts_modules_* from the Python source (see
+#                      "populate: modules" below)
 #
 # Idempotent via MERGE on deterministic key_guid. The flags are derived, not
 # authored: every populate run recomputes them from the live catalog.
@@ -258,10 +260,18 @@ def _resolve_type_name(base_to_name: dict[str, str], sys_type: str,
 # install; a package file never does.
 PIPELINE_COLUMNS = ('ref_package_guid', 'pub_is_sealed', 'pub_last_version')
 
-# The tables populate derives from the live schema. The installer never embeds
-# their rows: the DDL it emits IS their source, and populate regenerates them.
+# The seed tables the installer carries beyond the manifest rows, the
+# configuration row and the types prelude: what the kernel reads at boot
+# before any package is installed. Everything else is package data.
+BOOTSTRAP_TABLES = ('contracts_primitives_enum_types', 'contracts_primitives_enums')
+
+# The tables populate derives from the live schema and the live code. The
+# installer never embeds their rows: the DDL it emits IS the schema source,
+# the package files carry the module rows, and populate regenerates both.
 REFLECTED_TABLES = ('contracts_db_tables', 'contracts_db_columns', 'contracts_db_indexes',
-                    'contracts_db_index_columns', 'contracts_db_constraints', 'contracts_db_constraint_columns')
+                    'contracts_db_index_columns', 'contracts_db_constraints', 'contracts_db_constraint_columns',
+                    'contracts_modules', 'contracts_modules_models', 'contracts_modules_models_fields',
+                    'contracts_modules_functions', 'contracts_modules_dependencies')
 
 
 def _excluded_from_seed(column_name: str) -> bool:
@@ -526,15 +536,16 @@ async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, 
          rs.name AS ref_schema,
          rt.name AS ref_table_name,
          k.delete_action AS pub_delete_disposition,
-         k.is_clustered AS pub_is_clustered
+         k.is_clustered AS pub_is_clustered,
+         k.definition AS pub_expression
        FROM (
-         SELECT kc.object_id, kc.parent_object_id, kc.name, 'PRIMARY_KEY' AS type_desc, NULL AS referenced_object_id, NULL AS delete_action, CASE WHEN i.type = 1 THEN 1 ELSE 0 END AS is_clustered FROM sys.key_constraints kc JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id WHERE kc.type='PK'
+         SELECT kc.object_id, kc.parent_object_id, kc.name, 'PRIMARY_KEY' AS type_desc, NULL AS referenced_object_id, NULL AS delete_action, CASE WHEN i.type = 1 THEN 1 ELSE 0 END AS is_clustered, NULL AS definition FROM sys.key_constraints kc JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id WHERE kc.type='PK'
          UNION ALL
-         SELECT kc.object_id, kc.parent_object_id, kc.name, 'UNIQUE'      AS type_desc, NULL,                       NULL,                      CASE WHEN i.type = 1 THEN 1 ELSE 0 END FROM sys.key_constraints kc JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id WHERE kc.type='UQ'
+         SELECT kc.object_id, kc.parent_object_id, kc.name, 'UNIQUE'      AS type_desc, NULL,                       NULL,                      CASE WHEN i.type = 1 THEN 1 ELSE 0 END, NULL FROM sys.key_constraints kc JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id WHERE kc.type='UQ'
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'FOREIGN_KEY' AS type_desc, referenced_object_id,       delete_referential_action, 0 FROM sys.foreign_keys
+         SELECT object_id, parent_object_id, name, 'FOREIGN_KEY' AS type_desc, referenced_object_id,       delete_referential_action, 0, NULL FROM sys.foreign_keys
          UNION ALL
-         SELECT object_id, parent_object_id, name, 'CHECK'       AS type_desc, NULL,                       NULL,                      0 FROM sys.check_constraints
+         SELECT object_id, parent_object_id, name, 'CHECK'       AS type_desc, NULL,                       NULL,                      0, definition FROM sys.check_constraints
        ) k
        JOIN sys.tables t ON k.parent_object_id = t.object_id
        JOIN sys.schemas s ON t.schema_id = s.schema_id
@@ -564,7 +575,7 @@ async def _populate_constraints(conn, table_guids: dict[str, str]) -> dict[str, 
       'ref_referenced_table_guid': ref_table_guid,
       'ref_package_guid': KERNEL_GUID,
       'pub_name': r['pub_name'],
-      'pub_expression': None,
+      'pub_expression': r['pub_expression'],
       'pub_is_clustered': int(bool(r['pub_is_clustered'])),
       'pub_delete_disposition': r['pub_delete_disposition'],
     })
@@ -654,7 +665,7 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
 
 
 async def populate(conn) -> None:
-  print('Populating contracts_db_*...')
+  print('Populating contracts_db_* and contracts_modules_*...')
   base_to_name, name_to_guid = await _load_type_lookup(conn)
   table_guids = await _populate_tables(conn)
   column_guids = await _populate_columns(conn, table_guids, base_to_name, name_to_guid)
@@ -662,7 +673,354 @@ async def populate(conn) -> None:
   await _populate_index_columns(conn, index_guids, column_guids)
   constraint_guids = await _populate_constraints(conn, table_guids)
   await _populate_constraint_columns(conn, constraint_guids, column_guids)
+  await _populate_modules(conn, name_to_guid)
   print('Populate complete.')
+
+
+# =============================================================================
+# populate: modules
+# =============================================================================
+#
+# Reflects server/kernel and server/core by AST (no import) into the
+# contracts_modules_* cluster: every class that descends from BaseModule,
+# BaseProvider or BaseWorker, the abstract bases and the composed providers
+# (*Provider classes that stand alone) included. Rules:
+#   - A function is recorded ONCE, on the class that declares it. A subclass
+#     method of the same name is an implementation of that contract, not a
+#     new row; its signature must match or populate fails loud.
+#   - Option B typing: a function takes ONE input model (its parameters as
+#     fields) and returns ONE output model (one field: value / items / item).
+#     `void` is the empty model. Models are shared by shape, one row per
+#     shape; an input is named by its field names, an output by its type.
+#   - An annotation the type graph cannot express (dict, Any, tuple, a type
+#     object, a live handle) is recorded as JSON_DOC with a DEFECT note on the
+#     function row. Those are the evolution backlog.
+#   - Edges: REQUIRES per get_module() call and per constructor parameter
+#     annotated with a reflected class; INHERITS per base class.
+#   - Ownership follows the folder: server/kernel -> kernel, server/core ->
+#     core. A shared model belongs to the first package that used it (kernel
+#     is walked first, so core never owns a model the kernel references).
+# Idempotent via MERGE on deterministic key_guid, like the schema passes.
+# Stale rows are not deleted, also like the schema passes.
+# =============================================================================
+
+_PY_TO_TYPE = {'str': 'STRING', 'int': 'INT32', 'bool': 'BOOL', 'float': 'FLOAT64', 'bytes': 'BINARY'}
+_UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'KernelModuleManager', 'BaseDatabaseTransactionProvider'}
+_COLLECTION_NAMES = {'list', 'set', 'Iterable'}
+_RECORD_MODELS = {'DBRequest': 'db_request'}
+_ROOT_BASES = ('BaseModule', 'BaseProvider', 'BaseWorker')
+
+
+class _Slot:
+  """One typed slot: primitive or model, nullable, collection; the source
+  annotation text is kept when the slot is a DEFECT placeholder."""
+  def __init__(self, kind: str, target: str, nullable: bool = False, collection: bool = False, note: str | None = None):
+    self.kind, self.target, self.nullable, self.collection, self.note = kind, target, nullable, collection, note
+
+  def shape(self):
+    return (self.kind, self.target, self.nullable, self.collection)
+
+
+class _Field:
+  def __init__(self, name: str, slot: _Slot, default: str | None = None):
+    self.name, self.slot, self.default = name, slot, default
+
+  def shape(self):
+    return (self.name,) + self.slot.shape() + (self.default,)
+
+
+def _parse_annotation(node) -> _Slot | None:
+  """Annotation AST -> _Slot, or None for void."""
+  if node is None or (isinstance(node, ast.Constant) and node.value is None):
+    return None
+  if isinstance(node, ast.Constant) and isinstance(node.value, str):
+    return _parse_annotation(ast.Name(id=node.value))
+  if isinstance(node, ast.Name):
+    if node.id in _PY_TO_TYPE:
+      return _Slot('type', _PY_TO_TYPE[node.id])
+    if node.id in _RECORD_MODELS:
+      return _Slot('model', _RECORD_MODELS[node.id])
+    if node.id in _UNTYPED_NAMES:
+      return _Slot('type', 'JSON_DOC', note=node.id)
+    raise ValueError('unmapped annotation name %s' % node.id)
+  if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+    for other, none in ((node.left, node.right), (node.right, node.left)):
+      if isinstance(none, ast.Constant) and none.value is None:
+        slot = _parse_annotation(other)
+        slot.nullable = True
+        return slot
+    raise ValueError('union without None: %s' % ast.unparse(node))
+  if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+    if node.value.id in _COLLECTION_NAMES:
+      inner = _parse_annotation(node.slice)
+      if inner.collection:
+        raise ValueError('nested collection: %s' % ast.unparse(node))
+      inner.collection = True
+      return inner
+    if node.value.id in ('dict', 'type', 'Type'):
+      return _Slot('type', 'JSON_DOC', note=ast.unparse(node))
+  raise ValueError('unmapped annotation %s' % ast.unparse(node))
+
+
+def _default_literal(node) -> str | None:
+  if node is None or (isinstance(node, ast.Constant) and node.value is None):
+    return None
+  if isinstance(node, ast.Constant):
+    return str(node.value)
+  raise ValueError('non-constant default %s' % ast.unparse(node))
+
+
+class _ModuleGraph:
+  """The reflected rows before they are merged."""
+  def __init__(self):
+    self.classes: dict[str, dict] = {}     # name -> {owner, path, bases, abstract, node}
+    self.order: list[str] = []
+    self.models: dict[str, dict] = {}      # name -> {owner, fields, notes}
+    self.by_shape: dict[tuple, str] = {}
+    self.functions: list[dict] = []
+    self.edges: set[tuple[str, str, str]] = set()   # (module, dependency, kind)
+    self.add_model('void', KERNEL_GUID, [], 'The empty model: a function with no parameters takes it, a function that returns nothing returns it.')
+    self.add_model('db_request', KERNEL_GUID, [
+      _Field('op', _Slot('type', 'STRING')),
+      _Field('params', _Slot('type', 'JSON_DOC', note='dict[str, Any]'), '{}'),
+    ], 'DBRequest (dataclass): the named-operation request DatabaseOperationsModule dispatches.')
+
+  def add_model(self, name: str, owner: str, fields: list, notes: str | None = None) -> str:
+    if name in self.models:
+      raise ValueError('module model name collision: %s' % name)
+    self.models[name] = {'owner': owner, 'fields': fields, 'notes': notes}
+    self.by_shape.setdefault(tuple(f.shape() for f in fields), name)
+    return name
+
+  def model_for(self, fields: list, suffix: str, owner: str) -> str:
+    shape = tuple(f.shape() for f in fields)
+    if shape in self.by_shape:
+      return self.by_shape[shape]
+    if suffix == 'input':
+      name = '_'.join(f.name for f in fields) + '_input'
+    else:
+      f = fields[0]
+      name = (f.slot.target.lower() + ('_item' if f.slot.kind == 'model' else '')
+              + ('_nullable' if f.slot.nullable else '') + ('_items' if f.slot.collection else '') + '_output')
+    return self.add_model(name, owner, fields)
+
+  def ancestors(self, name: str) -> list[str]:
+    out, pending = [], list(self.classes[name]['bases'])
+    while pending:
+      b = pending.pop(0)
+      if b in self.classes and b not in out:
+        out.append(b)
+        pending.extend(self.classes[b]['bases'])
+    return out
+
+  def root(self, name: str) -> str | None:
+    if name in _ROOT_BASES:
+      return name
+    for a in self.ancestors(name):
+      if a in _ROOT_BASES:
+        return a
+    return None
+
+
+def _module_role(graph: _ModuleGraph, name: str) -> str | None:
+  """MEP slot: Operations / Maintenance / Interface -> MANAGER; Execution /
+  Management -> EXECUTOR; providers -> PROVIDER; workers -> WORKER. The
+  standalone modules (configuration, enum, environment, logging) are
+  managers. BaseModule itself is the base of every slot and has none."""
+  root = graph.root(name)
+  if root == 'BaseProvider' or (root is None and name.endswith('Provider')):
+    return 'PROVIDER'
+  if root == 'BaseWorker':
+    return 'WORKER'
+  if name == 'BaseModule':
+    return None
+  if name.endswith('ExecutionModule') or name.endswith('ManagementModule'):
+    return 'EXECUTOR'
+  return 'MANAGER'
+
+
+def _collect_classes(graph: _ModuleGraph, root: str, pkg: str, owner: str) -> None:
+  folder = os.path.join(root, 'server', pkg)
+  files = [os.path.join(folder, '__init__.py')]
+  files += [os.path.join(folder, f) for f in sorted(os.listdir(folder)) if f.endswith('_module.py')]
+  for sub in sorted(os.listdir(folder)):
+    subdir = os.path.join(folder, sub)
+    if os.path.isdir(subdir) and sub.endswith('_providers'):
+      files.append(os.path.join(subdir, '__init__.py'))
+      files += [os.path.join(subdir, f) for f in sorted(os.listdir(subdir)) if f.endswith('_provider.py') or f.endswith('_worker.py')]
+  for path in files:
+    with open(path, encoding='utf-8') as fh:
+      tree = ast.parse(fh.read())
+    for cls in tree.body:
+      if not isinstance(cls, ast.ClassDef):
+        continue
+      bases = [b.id for b in cls.bases if isinstance(b, ast.Name)]
+      abstract = 'ABC' in bases or any(
+        isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(isinstance(d, ast.Name) and d.id == 'abstractmethod' for d in fn.decorator_list)
+        for fn in cls.body)
+      graph.classes[cls.name] = {'owner': owner, 'path': os.path.relpath(path, root).replace(os.sep, '/'),
+                                 'bases': bases, 'abstract': abstract, 'node': cls}
+      graph.order.append(cls.name)
+
+
+def _signature(graph: _ModuleGraph, cls_name: str, fn, owner: str) -> tuple[str, str, str | None]:
+  """(input model, output model, defect note) of one function."""
+  notes, fields = [], []
+  args = fn.args
+  positional = args.posonlyargs + args.args
+  defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
+  for a, d in list(zip(positional, defaults)) + list(zip(args.kwonlyargs, args.kw_defaults)):
+    if a.arg == 'self':
+      continue
+    if a.annotation is None:
+      raise ValueError('%s.%s: parameter %s has no annotation' % (cls_name, fn.name, a.arg))
+    slot = _parse_annotation(a.annotation)
+    if slot.note:
+      notes.append('param %s: %s' % (a.arg, ast.unparse(a.annotation)))
+    fields.append(_Field(a.arg, slot, _default_literal(d)))
+  if args.vararg is not None:
+    raise ValueError('%s.%s: *args is not representable' % (cls_name, fn.name))
+  if args.kwarg is not None:
+    slot = _parse_annotation(args.kwarg.annotation)
+    notes.append('param **%s: %s' % (args.kwarg.arg, ast.unparse(args.kwarg.annotation)))
+    fields.append(_Field(args.kwarg.arg, slot))
+  input_model = 'void' if not fields else graph.model_for(fields, 'input', owner)
+  ret = _parse_annotation(fn.returns)
+  if ret is None:
+    output_model = 'void'
+  else:
+    if ret.note:
+      notes.append('return: %s' % ast.unparse(fn.returns))
+    field_name = 'items' if ret.collection else ('item' if ret.kind == 'model' else 'value')
+    output_model = graph.model_for([_Field(field_name, ret)], 'output', owner)
+  return input_model, output_model, ('DEFECT untyped: ' + '; '.join(notes)) if notes else None
+
+
+def _reflect_modules(root: str) -> _ModuleGraph:
+  graph = _ModuleGraph()
+  _collect_classes(graph, root, 'kernel', KERNEL_GUID)
+  _collect_classes(graph, root, 'core', CORE_GUID)
+  # keep only the module family: the three roots and everything under them
+  for name in list(graph.order):
+    if graph.root(name) is None and not name.endswith('Provider'):   # composed providers stand alone
+      del graph.classes[name]
+      graph.order.remove(name)
+  declared: dict[str, dict[str, tuple]] = {}   # class -> {function: (input, output)}
+  for name in graph.order:
+    info = graph.classes[name]
+    cls, owner = info['node'], info['owner']
+    inherited: dict[str, tuple] = {}
+    for a in reversed(graph.ancestors(name)):
+      inherited.update(declared.get(a, {}))
+    declared[name] = {}
+    for fn in cls.body:
+      if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name.startswith('_'):
+        continue
+      input_model, output_model, note = _signature(graph, name, fn, owner)
+      if fn.name in inherited:
+        if inherited[fn.name] != (input_model, output_model):
+          raise ValueError('%s.%s overrides %s with a different signature' % (name, fn.name, inherited[fn.name]))
+        continue   # an implementation of the inherited contract, not a new row
+      declared[name][fn.name] = (input_model, output_model)
+      graph.functions.append({'module': name, 'name': fn.name, 'is_async': isinstance(fn, ast.AsyncFunctionDef),
+                              'input': input_model, 'output': output_model, 'owner': owner, 'notes': note})
+    for node in ast.walk(cls):
+      if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'get_module'
+          and node.args and isinstance(node.args[0], ast.Name)):
+        graph.edges.add((name, node.args[0].id, 'REQUIRES'))
+    for fn in cls.body:
+      if isinstance(fn, ast.FunctionDef) and fn.name == '__init__':
+        for a in fn.args.args:
+          if isinstance(a.annotation, ast.Name) and a.annotation.id in graph.classes:
+            graph.edges.add((name, a.annotation.id, 'REQUIRES'))
+    for b in info['bases']:
+      if b in graph.classes:
+        graph.edges.add((name, b, 'INHERITS'))
+  for (m, d, _) in graph.edges:
+    if d not in graph.classes:
+      raise ValueError('%s depends on %s, which is not a reflected module' % (m, d))
+  return graph
+
+
+async def _enum_lookup(conn, enum_type: str) -> dict[str, str]:
+  rows = await _query_json(
+    conn,
+    f"""SELECT e.pub_name, e.key_guid
+       FROM {_kt('contracts_primitives_enums')} e
+       JOIN {_kt('contracts_primitives_enum_types')} et ON e.ref_enum_type_guid = et.key_guid
+       WHERE et.pub_name = ?
+       FOR JSON PATH""",
+    (enum_type,)
+  )
+  return {r['pub_name']: r['key_guid'] for r in rows}
+
+
+async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
+  root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+  graph = _reflect_modules(root)
+  roles = await _enum_lookup(conn, 'module_role')
+  kinds = await _enum_lookup(conn, 'module_dependency_kind')
+  module_guids = {n: _guid('contracts_modules', n) for n in graph.order}
+  model_guids = {n: _guid('contracts_modules_models', n) for n in graph.models}
+  for name in graph.order:
+    info = graph.classes[name]
+    role = _module_role(graph, name)
+    await _merge(conn, 'contracts_modules', 'key_guid', {
+      'key_guid': module_guids[name],
+      'ref_role_enum_guid': roles[role] if role else None,
+      'ref_package_guid': info['owner'],
+      'pub_name': name,
+      'pub_is_abstract': int(info['abstract']),
+      'pub_notes': info['path'],
+    })
+  print('  modules: %d' % len(graph.order))
+  for name, m in graph.models.items():
+    await _merge(conn, 'contracts_modules_models', 'key_guid', {
+      'key_guid': model_guids[name],
+      'ref_package_guid': m['owner'],
+      'pub_name': name,
+      'pub_notes': m['notes'],
+    })
+  print('  module models: %d' % len(graph.models))
+  count = 0
+  for name, m in graph.models.items():
+    for ordinal, f in enumerate(m['fields'], 1):
+      await _merge(conn, 'contracts_modules_models_fields', 'key_guid', {
+        'key_guid': _guid('contracts_modules_models_fields', '%s.%s' % (name, f.name)),
+        'ref_model_guid': model_guids[name],
+        'ref_type_guid': name_to_guid[f.slot.target] if f.slot.kind == 'type' else None,
+        'ref_type_model_guid': model_guids[f.slot.target] if f.slot.kind == 'model' else None,
+        'ref_package_guid': m['owner'],
+        'pub_name': f.name,
+        'pub_ordinal': ordinal,
+        'pub_is_nullable': int(f.slot.nullable),
+        'pub_is_collection': int(f.slot.collection),
+        'pub_default_value': f.default,
+        'pub_max_length': None,
+      })
+      count += 1
+  print('  module model fields: %d' % count)
+  for f in graph.functions:
+    await _merge(conn, 'contracts_modules_functions', 'key_guid', {
+      'key_guid': _guid('contracts_modules_functions', '%s.%s' % (f['module'], f['name'])),
+      'ref_module_guid': module_guids[f['module']],
+      'ref_input_model_guid': model_guids[f['input']],
+      'ref_output_model_guid': model_guids[f['output']],
+      'ref_package_guid': f['owner'],
+      'pub_name': f['name'],
+      'pub_is_async': int(f['is_async']),
+      'pub_notes': f['notes'],
+    })
+  print('  module functions: %d' % len(graph.functions))
+  for (m, d, kind) in sorted(graph.edges):
+    await _merge(conn, 'contracts_modules_dependencies', 'key_guid', {
+      'key_guid': _guid('contracts_modules_dependencies', '%s.%s' % (m, d)),
+      'ref_module_guid': module_guids[m],
+      'ref_dependency_guid': module_guids[d],
+      'ref_kind_enum_guid': kinds[kind],
+      'ref_package_guid': graph.classes[m]['owner'],
+    })
+  print('  module dependencies: %d' % len(graph.edges))
 
 
 # =============================================================================
@@ -720,10 +1078,10 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | tupl
 async def _read_schema(conn) -> dict:
   tables = await _query_json(
     conn,
-    f"""SELECT key_guid, pub_name, pub_schema, pub_alias
+    f"""SELECT key_guid, ref_package_guid, pub_name, pub_schema, pub_alias
        FROM {_kt('contracts_db_tables')}
        ORDER BY pub_schema, pub_name
-       FOR JSON PATH"""
+       FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
   columns = await _query_json(
     conn,
@@ -902,26 +1260,35 @@ def _build_table_seed(schema: str, table_name: str, columns: list[str], rows: li
 
 async def make_installer(conn, prefix: str = 'installer') -> str:
   print('Reading schema...')
-  # The kernel DDL is the installer: it embeds the kernel, core and setup
-  # manifest rows, the core-owned base types in the prelude, and only the
-  # seed rows the kernel owns, with ref_package_guid carried through.
+  # The installer is the BOOTSTRAP, nothing more: the tables the kernel owns
+  # (the type graph and the manifest / configuration tables), the kernel,
+  # core and setup manifest rows, the core-owned base types in the prelude,
+  # the database version and the enums, ref_package_guid carried through.
+  # Every other row belongs to a package file (kernel, core, setup): the
+  # kernel's operations, models and module contracts included. A package
+  # file declares its own tables (install materializes them, uninstall
+  # drops them) and carries its rows.
   package_guids = (KERNEL_GUID, CORE_GUID, SETUP_GUID)
   manifest_schema, manifest_columns, manifest_rows = await _read_table_projection(conn, MANIFEST_TABLE, key_guid=package_guids)
   if len(manifest_rows) != len(package_guids):
     raise ValueError('expected the kernel, core and setup rows in %s, found %d; apply the manifest batch before generating' % (_mt(), len(manifest_rows)))
   types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types', package_guid=CORE_GUID)
-  # Authored seed rows: every seed table in install order, the rows the three
-  # shipped packages own. Tables already emitted above and the reflected
-  # metadata tables are skipped.
+  # Bootstrap seed rows: the BOOTSTRAP_TABLES in install order, only the
+  # rows the kernel owns. Manifest, configuration and types are emitted
+  # above; nothing else is in the installer.
   seeds: list[tuple[str, str, list[str], list[dict]]] = []
   for t in await _read_seed_table_list(conn):
-    if t['pub_name'] in REFLECTED_TABLES + (MANIFEST_TABLE, 'service_system_configuration', 'contracts_primitives_types'):
+    if t['pub_name'] not in BOOTSTRAP_TABLES:
       continue
-    seed_schema, seed_columns, seed_rows = await _read_table_projection(conn, t['pub_name'], package_guid=package_guids)
+    seed_schema, seed_columns, seed_rows = await _read_table_projection(conn, t['pub_name'], package_guid=KERNEL_GUID)
     if seed_rows:
       seeds.append((seed_schema, t['pub_name'], seed_columns, seed_rows))
   schema = await _read_schema(conn)
 
+  # Only the kernel-owned tables are in the installer; a package's tables
+  # are declared in its package file and materialized at install. Indexes
+  # and constraints follow their table through table_by_guid.
+  schema['tables'] = [t for t in schema['tables'] if (t['ref_package_guid'] or '').upper() == KERNEL_GUID]
   table_by_guid = {t['key_guid']: t for t in schema['tables']}
 
   types_table = next(
