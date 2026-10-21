@@ -1,11 +1,11 @@
 import logging
 
-from server.kernel import BaseProvider
+from . import BaseGatewayProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class McpGatewayProvider(BaseProvider):
+class McpGatewayProvider(BaseGatewayProvider):
   async def connect(self):
     pass
 

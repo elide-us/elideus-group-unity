@@ -1,10 +1,68 @@
 import logging
 from abc import abstractmethod
 
+from pydantic import BaseModel
+
 from server.kernel import BaseProvider, BaseWorker
 from server.kernel.database_operations_module import DatabaseOperationsModule
 
 logger = logging.getLogger(__name__.split('.')[-1])
+
+# ----------------------------------------------------------------------------
+# WorkflowQueueClaim: the claimed queue row, as the claim operation returns it
+# (the workflow_queue_claim_output model).
+# ----------------------------------------------------------------------------
+# The instance's key, its definition and package (NULL when the declaration
+# named none), its batch number, its copy of the step document, whether and
+# how often it may retry, the attempts so far (this claim counted), its
+# disposition, the started_on stamp the claim wrote, and its definition's
+# name (the claim joins service_workflow_definitions for it).
+# ----------------------------------------------------------------------------
+
+class WorkflowQueueClaim(BaseModel):
+  key_guid: str
+  ref_definition_guid: str
+  pub_batch_number: int
+  pub_steps: str
+  pub_can_retry: bool
+  pub_max_attempts: int
+  pub_attempts: int
+  ref_disposition_enum_guid: str
+  pub_started_on: str
+  ref_package_guid: str | None = None
+  pub_name: str
+
+
+# ----------------------------------------------------------------------------
+# WorkflowHistoryRecord: one row of system_workflow_history, as the record
+# operation writes it.
+# ----------------------------------------------------------------------------
+# The narrow record of one TERMINAL outcome (COMPLETE, or the FAILED that
+# spent the attempts): its own key, the package of the queue row it ran from,
+# the definition and the name it ran as,
+# the queue row it ran from (no FK: queue rows may be purged), the host that
+# ran it, the user that declared it (NULL until auth exists), the outcome and
+# the disposition, the batch number and the attempts, when it started (the
+# claim's stamp) and finished, how long it ran, and the error when it failed.
+# ----------------------------------------------------------------------------
+
+class WorkflowHistoryRecord(BaseModel):
+  key_guid: str
+  ref_package_guid: str | None = None
+  ref_definition_guid: str
+  ref_instance_guid: str
+  ref_host_guid: str
+  ref_user_guid: str | None = None
+  ref_status_enum_guid: str
+  ref_disposition_enum_guid: str
+  pub_name: str
+  pub_batch_number: int
+  pub_attempts: int
+  pub_started_on: str
+  pub_finished_on: str
+  pub_duration_ms: int
+  pub_error: str | None = None
+
 
 # ----------------------------------------------------------------------------
 # BaseWorkflowManagementProvider
@@ -45,9 +103,9 @@ class BaseWorkflowManagementProvider(BaseProvider):
 #   declare(row) -> None          row {key_guid, ref_package_guid, ref_definition_guid,
 #                                 ref_status_enum_guid, ref_disposition_enum_guid,
 #                                 pub_batch_number, pub_steps, pub_can_retry, pub_max_attempts}
-#   claim(pending, running) -> dict | None
+#   claim(pending, running) -> WorkflowQueueClaim | None
 #                                 the atomic PENDING -> RUNNING transition on the oldest
-#                                 pending row; returns the claim shape or None when empty
+#                                 pending row; returns the claimed row or None when empty
 #   complete(key_guid, status) -> None
 #   fail(key_guid, status, error) -> None        terminal: stamps finished_on
 #   retry(key_guid, status, error) -> None       back to pending: finished_on stays NULL
@@ -57,6 +115,9 @@ class BaseWorkflowManagementProvider(BaseProvider):
 #                                 {pub_number_from, pub_number_to} from sequence_allocate
 #   next(sequence_guid, module_guid, consumer_guid) -> dict
 #                                 {pub_number_from, pub_number_to} from sequence_next
+#   record_history(record) -> None
+#                                 one system_workflow_history row (WorkflowHistoryRecord):
+#                                 the narrow record of a terminal outcome, for review
 # ----------------------------------------------------------------------------
 
 class BaseWorkflowTaskProvider(BaseProvider):
@@ -76,7 +137,7 @@ class BaseWorkflowTaskProvider(BaseProvider):
     pass
 
   @abstractmethod
-  async def claim(self, pending: str, running: str) -> dict | None:
+  async def claim(self, pending: str, running: str) -> WorkflowQueueClaim | None:
     pass
 
   @abstractmethod
@@ -105,6 +166,10 @@ class BaseWorkflowTaskProvider(BaseProvider):
 
   @abstractmethod
   async def next(self, sequence_guid: str, module_guid: str, consumer_guid: str | None) -> dict:
+    pass
+
+  @abstractmethod
+  async def record_history(self, record: WorkflowHistoryRecord) -> None:
     pass
 
 

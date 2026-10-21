@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # queue's stale-claim sweep uses too: one rule.
 #
 # -- Contract ----------------------------------------------------------------
+#   host_key() -> str           [sync] this process's boot GUID, its service_hosts key
 #   reload(key_guid) -> None    the target host, live and SEALED, becomes RELOADING
 #   observe() -> bool           one worker pass: heartbeat, read the own row; False
 #                               once RELOADING has been seen and the exit has begun
@@ -103,6 +104,12 @@ class KernelHostManagementModule(BaseModule):
     self._worker = workers[WORKER](self, int(configuration.get(HEARTBEAT_KEY)))
     await self._worker.start()
     self.raise_ready()
+
+  def host_key(self) -> str:
+    # Who is running: the boot GUID this process registered with.
+    if self._key_guid is None:
+      raise RuntimeError("host is not registered")
+    return self._key_guid
 
   async def reload(self, key_guid: str) -> None:
     # The workflow side's one write. Only a live, sealed host can be asked to
