@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from fastapi import FastAPI
+from pydantic import BaseModel
 from typing import Dict, TypeVar, Type
 import asyncio, logging
 
@@ -8,7 +9,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # Database schema version this kernel is built for. Setup mode compares it
 # with the database_version configuration row; the installer and migration
 # scripts are generated from it.
-DATABASE_VERSION = "0.1.3"
+DATABASE_VERSION = "0.1.4"
 
 # The code a host ends its process with when its registry row says
 # RELOADING, for the host runtime to restart it on: neither 0 (setup mode's
@@ -54,21 +55,29 @@ class BaseProvider(ABC):
 # ----------------------------------------------------------------------------
 # BaseModule
 # ----------------------------------------------------------------------------
-# Abstract base for all modules. Every module file matching
-# *_module.py is autodiscovered, instantiated, and registered by the
-# ModuleManager during _discover().
+# Abstract base for all modules. A module loads only if it is LISTED: it
+# has a row in etg.contracts_modules. The kernel's own *_module.py files are
+# discovered from server/kernel (they open the database the listing is read
+# from) and must be listed too; every other module is loaded from the
+# listing, never from a folder scan (see KernelModuleManager).
 #
 # -- Lifecycle contract ------------------------------------------------------
 #
 #   __init__(app)   Synchronous. Initialize empty caches, null references.
 #                   No async work. No dependency resolution. Called during
-#                   ModuleManager._discover() (Phase 1).
+#                   ModuleManager._discover() for a kernel module and
+#                   ModuleManager._discover_listed() for a listed one.
 #
 #   startup()       Async. Resolve dependencies via get_module() + await_ready().
 #                   Load data, open resources, raise_ready(). Called during
-#                   ModuleManager._start_all() (Phase 2). All modules
-#                   run concurrently via asyncio.gather; ordering emerges
-#                   from await_ready() waits, not dispatch order.
+#                   ModuleManager._start_all(), in two waves: the kernel
+#                   modules first, then the listed modules once every kernel
+#                   module has started. Within a wave all modules run
+#                   concurrently via asyncio.gather; ordering emerges from
+#                   await_ready() waits, not dispatch order. A listed module
+#                   may await a kernel module; a kernel module must NEVER
+#                   await a listed module in startup(): the listed wave
+#                   does not exist until the kernel wave ends (deadlock).
 #
 #   on_seal()       Async. Post-init work. All modules are live and ready.
 #                   Called during ModuleManager._seal()
@@ -100,7 +109,7 @@ class BaseProvider(ABC):
 #                   after all resources are live.
 #
 # -- Dependency graph --------------------------------------------------------
-# All modules start concurrently. Ordering is implicit: a module that
+# The modules of a wave start concurrently. Ordering is implicit: a module that
 # calls `await dep.await_ready()` in its startup() will park until the
 # dependency signals. This forms a dynamic DAG at runtime. The only
 # constraint is no circular dependencies — two modules that each await
@@ -182,6 +191,41 @@ class BaseModule(ABC):
 
   def get_module(self, module_type: Type[T]) -> T:
     return self.module_manager._get_module(module_type)
+
+
+# ----------------------------------------------------------------------------
+# ModuleListing: one row of etg.contracts_modules, as the module listing
+# operation (db:contracts:modules:read_all:1) returns it.
+# ----------------------------------------------------------------------------
+# The listing is the gate: the KernelModuleManager loads a module only if it
+# has a row here. Role and package are GUIDs (module_role enum, package
+# manifest row); BaseModule itself has no role. The manager filters by role,
+# abstract flag and package in Python.
+# ----------------------------------------------------------------------------
+
+class ModuleListing(BaseModel):
+  key_guid: str
+  ref_role_enum_guid: str | None = None
+  ref_package_guid: str | None = None
+  pub_name: str
+  pub_is_abstract: bool
+
+
+# ----------------------------------------------------------------------------
+# PackageManifestRow: one row of dbo.service_packages_manifest, as the
+# manifest operation (db:contracts:db:list_manifest_rows:1, output model
+# list_manifest_rows_output) returns it.
+# ----------------------------------------------------------------------------
+# The KernelModuleManager maps a listing's ref_package_guid to its package:
+# the name is the server/<package> folder, and only a sealed package's
+# modules load.
+# ----------------------------------------------------------------------------
+
+class PackageManifestRow(BaseModel):
+  key_guid: str
+  pub_name: str
+  pub_version: str
+  pub_is_sealed: bool
 
 # This late import is required to resolve the circlar dependency 
 # between the KernelModuleManager and the Kernel re-export

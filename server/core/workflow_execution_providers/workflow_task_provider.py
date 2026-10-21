@@ -1,7 +1,7 @@
 import logging
 
 from server.kernel.database_operations_module import DBRequest
-from . import BaseWorkflowTaskProvider
+from . import BaseWorkflowTaskProvider, WorkflowHistoryRecord, WorkflowQueueClaim
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -15,6 +15,7 @@ RELEASE_STALE = "db:workflow:queue:release_stale:1"
 READ = "db:workflow:queue:read:1"
 SEQUENCE_ALLOCATE = "db:sequence:allocate:1"
 SEQUENCE_NEXT = "db:sequence:next:1"
+RECORD_HISTORY = "db:workflow:history:record:1"
 
 
 class WorkflowTaskProvider(BaseWorkflowTaskProvider):
@@ -38,14 +39,15 @@ class WorkflowTaskProvider(BaseWorkflowTaskProvider):
       "pub_max_attempts": row["pub_max_attempts"],
     })
 
-  async def claim(self, pending: str, running: str) -> dict | None:
+  async def claim(self, pending: str, running: str) -> WorkflowQueueClaim | None:
     # One statement moves the oldest pending row to running and returns it:
     # the atomic claim is the only multi-node coordination point.
     raw = await self._database.query(DBRequest(CLAIM, {
       "ref_status_enum_guid": pending,
       "ref_claimed_enum_guid": running,
     }))
-    return raw if isinstance(raw, dict) else (raw[0] if raw else None)
+    row = raw if isinstance(raw, dict) else (raw[0] if raw else None)
+    return None if row is None else WorkflowQueueClaim.model_validate(row)
 
   async def complete(self, key_guid: str, status: str) -> None:
     await self._one(COMPLETE, {"ref_status_enum_guid": status, "key_guid": key_guid})
@@ -75,6 +77,26 @@ class WorkflowTaskProvider(BaseWorkflowTaskProvider):
 
   async def next(self, sequence_guid: str, module_guid: str, consumer_guid: str | None) -> dict:
     return await self._issue(SEQUENCE_NEXT, sequence_guid, module_guid, consumer_guid)
+
+  async def record_history(self, record: WorkflowHistoryRecord) -> None:
+    # Parameter order is the operation's input model order.
+    await self._one(RECORD_HISTORY, {
+      "key_guid": record.key_guid,
+      "ref_package_guid": record.ref_package_guid,
+      "ref_definition_guid": record.ref_definition_guid,
+      "ref_instance_guid": record.ref_instance_guid,
+      "ref_host_guid": record.ref_host_guid,
+      "ref_user_guid": record.ref_user_guid,
+      "ref_status_enum_guid": record.ref_status_enum_guid,
+      "ref_disposition_enum_guid": record.ref_disposition_enum_guid,
+      "pub_name": record.pub_name,
+      "pub_batch_number": record.pub_batch_number,
+      "pub_attempts": record.pub_attempts,
+      "pub_started_on": record.pub_started_on,
+      "pub_finished_on": record.pub_finished_on,
+      "pub_duration_ms": record.pub_duration_ms,
+      "pub_error": record.pub_error,
+    })
 
   async def _issue(self, op: str, sequence_guid: str, module_guid: str, consumer_guid: str | None) -> dict:
     # The procedure commits the sequence advance and the audit row before it

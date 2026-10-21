@@ -2,12 +2,12 @@
 
 import logging
 
-from server.kernel import BaseProvider
+from . import BaseGatewayProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class DatabaseGatewayProvider(BaseProvider):
+class DatabaseGatewayProvider(BaseGatewayProvider):
   async def connect(self):
     pass
 

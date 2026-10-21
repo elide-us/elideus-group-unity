@@ -1,6 +1,8 @@
 import inspect
 import logging
+import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI
@@ -10,8 +12,9 @@ from server.kernel import BaseModule
 from server.kernel.database_operations_module import DatabaseOperationsModule
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
 from server.kernel.kernel_configuration_module import KernelConfigurationModule
+from server.kernel.kernel_host_management_module import KernelHostManagementModule
 from server.helpers import discover_classes, deterministic_guid
-from .workflow_execution_providers import BaseWorkflowManagementProvider, BaseWorkflowTaskProvider, BaseWorkflowTaskWorker
+from .workflow_execution_providers import BaseWorkflowManagementProvider, BaseWorkflowTaskProvider, BaseWorkflowTaskWorker, WorkflowHistoryRecord, WorkflowQueueClaim
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -53,6 +56,12 @@ class WorkflowSteps(BaseModel):
 # when they are not. Stale RUNNING rows (a node that died mid-run) go back
 # to PENDING on seal; the attempt they consumed counts.
 #
+# A TERMINAL outcome (COMPLETE, or the FAILED that spends the attempts) also
+# writes one system_workflow_history row: the narrow record a review of the
+# system's history reads (name, package, outcome, disposition, batch,
+# attempts, when it started and finished, how long it ran, which host ran
+# it, the error). A retry back to PENDING is not history.
+#
 # -- Contract ----------------------------------------------------------------
 #   definitions() -> dict[str, dict]                [sync, cache-only]
 #   definition(name) -> dict | None                 [sync, cache-only]
@@ -66,6 +75,7 @@ class WorkflowSteps(BaseModel):
 #
 # -- Dependencies ------------------------------------------------------------
 #   DatabaseOperationsModule, EnvironmentVariablesModule (NS_HASH),
+#   KernelHostManagementModule (host_key = who ran a history row),
 #   KernelConfigurationModule (stale_grace_seconds = the stale-claim sweep,
 #   workflow_poll_seconds = the worker cadence on an empty queue)
 #   workflow_execution_providers/*_provider, *_worker
@@ -90,6 +100,7 @@ class WorkflowManagementModule(BaseModule):
     self._definitions_provider: BaseWorkflowManagementProvider | None = None
     self._task_provider: BaseWorkflowTaskProvider | None = None
     self._worker: BaseWorkflowTaskWorker | None = None
+    self._host: KernelHostManagementModule | None = None
     self._namespace: uuid.UUID | None = None
     self._grace: int = 0
     self._poll: int = 0
@@ -110,9 +121,11 @@ class WorkflowManagementModule(BaseModule):
     await configuration.await_ready()
     self._grace = int(configuration.get(GRACE_KEY))
     self._poll = int(configuration.get(POLL_KEY))
+    self._host = self.get_module(KernelHostManagementModule)
+    await self._host.await_ready()
     self._status = {n: deterministic_guid(self._namespace, "contracts_primitives_enums", "task_status.%s" % n) for n in STATUSES}
     self._disposition = {n: deterministic_guid(self._namespace, "contracts_primitives_enums", "task_disposition.%s" % n) for n in DISPOSITIONS}
-    self._sequence_guid = deterministic_guid(self._namespace, "service_sequences", BATCH_SEQUENCE)
+    self._sequence_guid = deterministic_guid(self._namespace, "system_sequences", BATCH_SEQUENCE)
     self._module_guid = deterministic_guid(self._namespace, "contracts_modules", self.__class__.__name__)
     providers = discover_classes(f"{__package__}.workflow_execution_providers", "_provider")
     workers = discover_classes(f"{__package__}.workflow_execution_providers", "_worker")
@@ -179,26 +192,52 @@ class WorkflowManagementModule(BaseModule):
     claimed = await self._task_provider.claim(self._status["PENDING"], self._status["RUNNING"])
     if claimed is None:
       return False
-    key_guid = claimed["key_guid"]
+    began = time.monotonic()
+    key_guid = claimed.key_guid
     try:
-      steps = WorkflowSteps.model_validate_json(claimed["pub_steps"])
+      steps = WorkflowSteps.model_validate_json(claimed.pub_steps)
       for step in steps.steps:
         result = self.resolve_contract(step.contract)(**step.params)
         if inspect.isawaitable(result):
           await result
     except Exception as e:
       error = "%s: %s" % (type(e).__name__, e)
-      attempts, limit = int(claimed["pub_attempts"]), int(claimed["pub_max_attempts"])
-      if claimed["pub_can_retry"] and attempts < limit:
+      attempts, limit = claimed.pub_attempts, claimed.pub_max_attempts
+      if claimed.pub_can_retry and attempts < limit:
         await self._task_provider.retry(key_guid, self._status["PENDING"], error)
         logger.warning("Workflow instance %s failed on attempt %d of %d, pending retry: %s", key_guid, attempts, limit, error)
       else:
         await self._task_provider.fail(key_guid, self._status["FAILED"], error)
         logger.error("Workflow instance %s failed on attempt %d of %d, terminal: %s", key_guid, attempts, limit, error)
+        await self._record_history(claimed, "FAILED", began, error)
       return True
     await self._task_provider.complete(key_guid, self._status["COMPLETE"])
-    logger.info("Workflow instance %s complete (batch %s)", key_guid, claimed["pub_batch_number"])
+    logger.info("Workflow instance %s complete (batch %s)", key_guid, claimed.pub_batch_number)
+    await self._record_history(claimed, "COMPLETE", began, None)
     return True
+
+  async def _record_history(self, claimed: WorkflowQueueClaim, outcome: str, began: float, error: str | None):
+    # One row per terminal outcome. started_on is the claim's own stamp and
+    # the name is the definition's, both returned by the claim; the run time
+    # is measured on this process's monotonic clock from the claim to the
+    # outcome, so a clock difference between this host and the database
+    # cannot skew it.
+    await self._task_provider.record_history(WorkflowHistoryRecord(
+      key_guid=str(uuid.uuid4()).upper(),
+      ref_package_guid=claimed.ref_package_guid,
+      ref_definition_guid=claimed.ref_definition_guid,
+      ref_instance_guid=claimed.key_guid,
+      ref_host_guid=self._host.host_key(),
+      ref_status_enum_guid=self._status[outcome],
+      ref_disposition_enum_guid=claimed.ref_disposition_enum_guid,
+      pub_name=claimed.pub_name,
+      pub_batch_number=claimed.pub_batch_number,
+      pub_attempts=claimed.pub_attempts,
+      pub_started_on=claimed.pub_started_on,
+      pub_finished_on=datetime.now(timezone.utc).isoformat(),
+      pub_duration_ms=int((time.monotonic() - began) * 1000),
+      pub_error=error,
+    ))
 
   async def on_seal(self):
     # Stale-claim recovery: a RUNNING row past the grace period belongs to a
@@ -220,6 +259,7 @@ class WorkflowManagementModule(BaseModule):
         await provider.disconnect()
     self._definitions_provider = None
     self._task_provider = None
+    self._host = None
     self._definitions.clear()
     self._batch.clear()
     self._database = None

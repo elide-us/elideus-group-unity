@@ -34,6 +34,7 @@ class EnvironmentVariablesModule(BaseModule):
       "MYSQL_CONNECTION_STRING",
       "NS_HASH",
       "SETUP_ENABLED",
+      "DISCORD_SECRET",
     ]
 
     for var in required:
