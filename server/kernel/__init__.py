@@ -8,7 +8,12 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # Database schema version this kernel is built for. Setup mode compares it
 # with the database_version configuration row; the installer and migration
 # scripts are generated from it.
-DATABASE_VERSION = "0.1.0"
+DATABASE_VERSION = "0.1.3"
+
+# The code a host ends its process with when its registry row says
+# RELOADING, for the host runtime to restart it on: neither 0 (setup mode's
+# clean stop) nor 1 (a refused start). 75 is EX_TEMPFAIL.
+RELOAD_EXIT_CODE = 75
 
 T = TypeVar("T", bound="BaseModule")
 

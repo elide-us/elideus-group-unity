@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 # The kernel carries the database schema version; the installer stamps it.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from server.kernel import DATABASE_VERSION
+from server.helpers import pascal_to_snake
 
 import dotenv
 
@@ -673,8 +674,54 @@ async def populate(conn) -> None:
   await _populate_index_columns(conn, index_guids, column_guids)
   constraint_guids = await _populate_constraints(conn, table_guids)
   await _populate_constraint_columns(conn, constraint_guids, column_guids)
+  await _populate_procedures(conn)
   await _populate_modules(conn, name_to_guid)
   print('Populate complete.')
+
+
+async def _populate_procedures(conn) -> int:
+  # Stored procedures are a schema object kind of their own: the body is the
+  # definition as the catalog holds it; the builder renders it (see
+  # _build_procedure), as the builders do for every other kind. Same schema
+  # allowlist and tool-support skip as tables. Stamped CORE, not kernel:
+  # procedures are core package data (they travel in core.json.gz and are
+  # materialized on install), never bootstrap. populate is temporary and
+  # this branch goes with it.
+  rows = await _query_json(
+    conn,
+    """SELECT
+         s.name AS pub_schema,
+         p.name AS pub_name,
+         OBJECT_DEFINITION(p.object_id) AS pub_body_mssql,
+         CASE WHEN EXISTS (
+           SELECT 1 FROM sys.extended_properties ep
+           WHERE ep.class = 1 AND ep.major_id = p.object_id AND ep.minor_id = 0
+             AND ep.name = 'microsoft_database_tools_support'
+         ) THEN 1 ELSE 0 END AS sys_is_tool_support
+       FROM sys.procedures p
+       JOIN sys.schemas s ON p.schema_id = s.schema_id
+       ORDER BY s.name, p.name
+       FOR JSON PATH"""
+  )
+  n = 0
+  for r in rows:
+    natural = '%s.%s' % (r['pub_schema'], r['pub_name'])
+    if r['pub_schema'] not in (KERNEL_SCHEMA, MANIFEST_SCHEMA):
+      print('  skipped %s: schema is not %s or %s' % (natural, KERNEL_SCHEMA, MANIFEST_SCHEMA))
+      continue
+    if r['sys_is_tool_support']:
+      print('  skipped %s: microsoft_database_tools_support' % natural)
+      continue
+    await _merge(conn, 'contracts_db_procedures', 'key_guid', {
+      'key_guid': _guid('contracts_db_procedures', natural),
+      'ref_package_guid': CORE_GUID,
+      'pub_schema': r['pub_schema'],
+      'pub_name': r['pub_name'],
+      'pub_body_mssql': r['pub_body_mssql'],
+    })
+    n += 1
+  print('  procedures: %d' % n)
+  return n
 
 
 # =============================================================================
@@ -707,7 +754,8 @@ async def populate(conn) -> None:
 _PY_TO_TYPE = {'str': 'STRING', 'int': 'INT32', 'bool': 'BOOL', 'float': 'FLOAT64', 'bytes': 'BINARY'}
 _UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'KernelModuleManager', 'BaseDatabaseTransactionProvider'}
 _COLLECTION_NAMES = {'list', 'set', 'Iterable'}
-_RECORD_MODELS = {'DBRequest': 'db_request'}
+_RECORD_MODELS = {'DBRequest': 'db_request'}   # + every Pydantic BaseModel class, registered at reflection
+_RECORD_MODEL_BASE = 'BaseModel'
 _ROOT_BASES = ('BaseModule', 'BaseProvider', 'BaseWorker')
 
 
@@ -896,10 +944,35 @@ def _signature(graph: _ModuleGraph, cls_name: str, fn, owner: str) -> tuple[str,
   return input_model, output_model, ('DEFECT untyped: ' + '; '.join(notes)) if notes else None
 
 
+def _register_record_models(graph: _ModuleGraph) -> None:
+  """A Pydantic model class in a module file is a record model: a row in
+  contracts_modules_models with one field per annotated attribute, named
+  pascal_to_snake(class). Names register first so a model may reference a
+  model defined later; the classes leave the module family afterwards."""
+  records = [n for n in graph.order if _RECORD_MODEL_BASE in graph.classes[n]['bases']]
+  for name in records:
+    _RECORD_MODELS[name] = pascal_to_snake(name)
+  for name in records:
+    info = graph.classes[name]
+    fields = []
+    for node in info['node'].body:
+      if not isinstance(node, ast.AnnAssign) or not isinstance(node.target, ast.Name):
+        continue
+      slot = _parse_annotation(node.annotation)
+      if slot is None:
+        raise ValueError('%s.%s: a model field cannot be None-typed' % (name, node.target.id))
+      fields.append(_Field(node.target.id, slot, _default_literal(node.value)))
+    graph.add_model(_RECORD_MODELS[name], info['owner'], fields,
+                    '%s (pydantic): %s' % (name, info['path']))
+    del graph.classes[name]
+    graph.order.remove(name)
+
+
 def _reflect_modules(root: str) -> _ModuleGraph:
   graph = _ModuleGraph()
   _collect_classes(graph, root, 'kernel', KERNEL_GUID)
   _collect_classes(graph, root, 'core', CORE_GUID)
+  _register_record_models(graph)
   # keep only the module family: the three roots and everything under them
   for name in list(graph.order):
     if graph.root(name) is None and not name.endswith('Provider'):   # composed providers stand alone
@@ -1130,6 +1203,13 @@ async def _read_schema(conn) -> dict:
        ORDER BY cc.ref_constraint_guid, cc.pub_ordinal
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
+  procedures = await _query_json(
+    conn,
+    f"""SELECT key_guid, ref_package_guid, pub_schema, pub_name, pub_body_mssql
+       FROM {_kt('contracts_db_procedures')}
+       ORDER BY pub_schema, pub_name
+       FOR JSON PATH"""
+  )
   return {
     'tables': tables,
     'columns': columns,
@@ -1137,7 +1217,32 @@ async def _read_schema(conn) -> dict:
     'index_columns': index_columns,
     'constraints': constraints,
     'constraint_columns': constraint_columns,
+    'procedures': procedures,
   }
+
+
+_PROCEDURE_HEADER = re.compile(r'^\s*CREATE\s+(?:OR\s+ALTER\s+)?PROC(?:EDURE)?\b', re.IGNORECASE)
+
+
+def _build_procedure_body(proc: dict) -> str:
+  """Render the stored definition as the scripts re-apply it: LF line endings,
+  nothing before the CREATE line (the catalog keeps any comment that shared
+  the batch), CREATE OR ALTER PROCEDURE as the header (the catalog blanks
+  OR ALTER out), so every emission is idempotent."""
+  # Every CR goes, not just CRLF pairs: a body that was once written through a
+  # text-mode file carries CR CR LF per line, and a CR is never meaningful here.
+  lines = proc['pub_body_mssql'].replace('\r', '').split('\n')
+  start = next((i for i, line in enumerate(lines) if _PROCEDURE_HEADER.match(line)), None)
+  if start is None:
+    raise ValueError('%s.%s: definition has no CREATE PROCEDURE line' % (proc['pub_schema'], proc['pub_name']))
+  body = '\n'.join(line.rstrip() for line in lines[start:]).strip()
+  return _PROCEDURE_HEADER.sub('CREATE OR ALTER PROCEDURE', body, count=1)
+
+
+def _build_procedure(proc: dict) -> str:
+  # One batch per procedure; the section opens with one GO so the first body
+  # starts a batch too.
+  return '%s\nGO' % _build_procedure_body(proc)
 
 
 def _column_ddl(col: dict) -> str:
@@ -1379,6 +1484,16 @@ async def make_installer(conn, prefix: str = 'installer') -> str:
     ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
     sections.append(_build_constraint(con, table, ref_table, schema['constraint_columns']))
 
+  # Procedures last: their bodies reference the tables above. Kernel-owned
+  # only, like the tables; a package's procedures travel in its package file.
+  sections.append('')
+  sections.append('-- Procedures')
+  sections.append('GO')
+  for proc in schema['procedures']:
+    if (proc['ref_package_guid'] or '').upper() != KERNEL_GUID:
+      continue
+    sections.append(_build_procedure(proc))
+
   ts = datetime.now(timezone.utc).strftime('%Y%m%d')
   filename = '%s_%s.sql' % (prefix, ts)
   with open(filename, 'w') as f:
@@ -1596,6 +1711,25 @@ async def _materialize(conn) -> None:
     t for t in schema['tables']
     if '%s.%s' % (t['pub_schema'], t['pub_name']) not in existing
   ]
+  existing_procedures = await _existing_procedure_names(conn)
+  missing_procedures = [
+    p for p in schema['procedures']
+    if '%s.%s' % (p['pub_schema'], p['pub_name']) not in existing_procedures
+  ]
+  if not missing and not missing_procedures:
+    print('  no tables or procedures to materialize')
+    return
+  await _materialize_tables(conn, schema, missing)
+  # Procedures after tables: their bodies reference them.
+  if missing_procedures:
+    print('  materializing %d procedure(s):' % len(missing_procedures))
+    for proc in missing_procedures:
+      print('    %s.%s' % (proc['pub_schema'], proc['pub_name']))
+      async with conn.cursor() as cur:
+        await cur.execute(_build_procedure_body(proc))
+
+
+async def _materialize_tables(conn, schema: dict, missing: list[dict]) -> None:
   if not missing:
     print('  no tables to materialize')
     return
@@ -1791,6 +1925,18 @@ async def install(conn, path: str) -> None:
 # Package introspection helpers
 # =============================================================================
 
+async def _existing_procedure_names(conn) -> set[str]:
+  """Return {schema.procedure} for every procedure currently in sys.procedures."""
+  rows = await _query_json(
+    conn,
+    """SELECT s.name AS pub_schema, p.name AS pub_name
+       FROM sys.procedures p
+       JOIN sys.schemas s ON p.schema_id = s.schema_id
+       FOR JSON PATH"""
+  )
+  return {'%s.%s' % (r['pub_schema'], r['pub_name']) for r in rows}
+
+
 async def _tables_with_package_ref(conn) -> list[str]:
   """Returns [schema.table] for every table, in any schema, that has a
   ref_package_guid column. Determined at runtime so the list isn't
@@ -1893,7 +2039,21 @@ async def _scan_owned_rows(conn, pkg_guid: str) -> dict:
   handles the actual cleanup at uninstall time; this function just reports
   what's there.
   """
-  result: dict = {'data_tables': [], 'ext_columns': [], 'pkg_table_counts': {}}
+  result: dict = {'data_tables': [], 'procedures': [], 'ext_columns': [], 'pkg_table_counts': {}}
+
+  # Procedures owned by the package
+  existing_procedures = await _existing_procedure_names(conn)
+  for p in await _query_json(
+    conn,
+    f"SELECT key_guid, pub_schema, pub_name FROM {_kt('contracts_db_procedures')} WHERE ref_package_guid = ? FOR JSON PATH",
+    (pkg_guid,)
+  ):
+    result['procedures'].append({
+      'schema': p['pub_schema'],
+      'name': p['pub_name'],
+      'guid': p['key_guid'],
+      'physical': '%s.%s' % (p['pub_schema'], p['pub_name']) in existing_procedures,
+    })
 
   # Tables owned by the package
   owned_tables = await _query_json(
@@ -1969,6 +2129,12 @@ def _print_uninstall_plan(pkg: dict, scan: dict) -> None:
   if not pkg['pub_is_sealed']:
     print('  (package is UNSEALED — uninstall cleans up partial install)')
 
+  if scan['procedures']:
+    print('  Drop %d procedure(s):' % len(scan['procedures']))
+    for p in scan['procedures']:
+      tag = '' if p['physical'] else ' (declared only, not physical)'
+      print('    DROP PROCEDURE [%s].[%s]%s' % (p['schema'], p['name'], tag))
+
   if scan['data_tables']:
     print('  Drop %d table(s):' % len(scan['data_tables']))
     for t in scan['data_tables']:
@@ -1991,6 +2157,16 @@ def _print_uninstall_plan(pkg: dict, scan: dict) -> None:
 
 async def _execute_uninstall(conn, pkg: dict, scan: dict) -> None:
   pkg_guid = pkg['key_guid']
+
+  # Step 0: drop physical owned procedures (they reference the tables)
+  for p in scan['procedures']:
+    if p['physical']:
+      ddl = 'DROP PROCEDURE [%s].[%s]' % (p['schema'], p['name'])
+      print('    %s' % ddl)
+      try:
+        await _execute(conn, ddl)
+      except Exception as e:
+        raise RuntimeError('failed to drop %s.%s: %s' % (p['schema'], p['name'], e)) from e
 
   # Step 1: drop physical owned tables (rows go with them)
   for t in scan['data_tables']:

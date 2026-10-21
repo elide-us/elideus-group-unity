@@ -16,6 +16,8 @@ every relationship (edges, never `[[GUID]]` prose — an unlinked entry is one n
 `memory_update` corrects, a contradiction is its own entry with edges; bank a `deadend` (with its
 `verdict`, linked `attempted_for` the problem) the moment an attempt is reverted;
 `memory_maintenance` is a proposal queue a human decides. Never write a local `.md` design/memory file.
+**COLUMN LIMITS on `memory_store` / `memory_update`: `title` ≤ 220 characters, `source` ≤ 90 — longer
+fails with an ODBC truncation error. Count before you send; put the detail in the body, not the title.**
 **Git is read-only (`status log diff show blame ls-files`); every mutating git command and worktrees
 are off-limits. `.env` and database connections are off-limits — hand the operator the query.
 `.claude/settings.json` enforces the git and `.env` rules; never edit, weaken, or work around it.**
