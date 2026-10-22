@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-from scriptlib import connect, make_installer, install, list_packages, uninstall, make_package, populate
+from scriptlib import connect, make_installer, install, list_packages, uninstall, make_package, make_requirements, populate
 
 
 HELP_TEXT = """\
@@ -12,6 +12,7 @@ Available commands:
   populate                      Reflect sys.* into contracts_db_* (fill kernel tables)
   make installer [name]         Read contracts_db_*, write <name>_YYYYMMDD.sql (the kernel installer)
   make package [name]           Export one package's owned rows -> <name>.json.gz (default: kernel)
+  make requirements             Write requirements.txt + requirements-dev.txt from the library primitive rows
   install <file>                Install a package file (.json or .json.gz): register → schema → materialize → data → seal
   list packages                 Show installed packages and row ownership
   uninstall <name>              Show uninstall plan (dry run)
@@ -63,6 +64,11 @@ async def interactive_console(conn):
           await make_package(conn, name)
         except Exception as e:
           print('Error making package: %s' % e)
+      case ['make', 'requirements']:
+        try:
+          await make_requirements(conn)
+        except Exception as e:
+          print('Error making requirements: %s' % e)
       case ['install', path]:
         try:
           await install(conn, path)
