@@ -401,6 +401,63 @@ CREATE TABLE [etg].[contracts_primitives_enums] (
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
 );
+CREATE TABLE [etg].[contracts_primitives_libraries] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_name] NVARCHAR(128) NOT NULL,
+  [pub_version] NVARCHAR(32) NOT NULL,
+  [pub_is_dev_library] BIT DEFAULT (0) NOT NULL,
+  [pub_project_url] NVARCHAR(512) NULL,
+  [pub_advisory_ref] NVARCHAR(256) NULL,
+  [pub_notes] NVARCHAR(MAX) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
+CREATE TABLE [etg].[contracts_primitives_libraries_functions] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_library_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_input_model_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_output_model_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_name] NVARCHAR(256) NOT NULL,
+  [pub_is_async] BIT DEFAULT (0) NOT NULL,
+  [pub_notes] NVARCHAR(512) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
+CREATE TABLE [etg].[contracts_primitives_libraries_hashes] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_library_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_artifact] NVARCHAR(256) NOT NULL,
+  [pub_algorithm] NVARCHAR(16) NOT NULL,
+  [pub_hash] NVARCHAR(128) NOT NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
+CREATE TABLE [etg].[contracts_primitives_libraries_models] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_name] NVARCHAR(128) NOT NULL,
+  [pub_notes] NVARCHAR(512) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
+CREATE TABLE [etg].[contracts_primitives_libraries_models_fields] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_model_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_type_guid] UNIQUEIDENTIFIER NULL,
+  [ref_type_model_guid] UNIQUEIDENTIFIER NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [pub_name] NVARCHAR(128) NOT NULL,
+  [pub_ordinal] INT NOT NULL,
+  [pub_is_nullable] BIT DEFAULT (0) NOT NULL,
+  [pub_is_collection] BIT DEFAULT (0) NOT NULL,
+  [pub_default_value] NVARCHAR(512) NULL,
+  [pub_max_length] INT NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
 GO
 INSERT INTO [dbo].[service_packages_manifest]
   (key_guid, ref_package_guid, pub_name, pub_version, pub_last_version, pub_is_sealed)
@@ -468,8 +525,10 @@ VALUES
   ('04B28DA7-E20C-5AEE-8E2A-F8FE79ADCF07', 'F5539B3E-417C-5A95-BF9B-592B97369B40', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'GENERATED', 1, 'Declared schema generated from contracts_db_* rows.');
 
 -- Indexes
+CREATE NONCLUSTERED INDEX [IX_cplmf_model_guid] ON [etg].[contracts_primitives_libraries_models_fields] ([ref_model_guid]);
 CREATE NONCLUSTERED INDEX [IX_cmd_kind] ON [etg].[contracts_modules_dependencies] ([ref_kind_enum_guid]);
 CREATE NONCLUSTERED INDEX [IX_cmd_module_guid] ON [etg].[contracts_modules_dependencies] ([ref_module_guid]);
+CREATE NONCLUSTERED INDEX [IX_cplh_library_guid] ON [etg].[contracts_primitives_libraries_hashes] ([ref_library_guid]);
 CREATE NONCLUSTERED INDEX [IX_ssrg_member_guid] ON [dbo].[service_security_role_groups] ([ref_member_guid]);
 CREATE NONCLUSTERED INDEX [IX_cdi_table_guid] ON [etg].[contracts_db_indexes] ([ref_table_guid]);
 CREATE NONCLUSTERED INDEX [IX_swq_status_created] ON [dbo].[system_workflow_queue] ([ref_status_enum_guid], [priv_created_on]);
@@ -487,14 +546,23 @@ CREATE NONCLUSTERED INDEX [IX_sh_status_heartbeat] ON [dbo].[service_hosts] ([re
 CREATE NONCLUSTERED INDEX [IX_cm_role] ON [etg].[contracts_modules] ([ref_role_enum_guid]);
 CREATE NONCLUSTERED INDEX [IX_cmmf_model_guid] ON [etg].[contracts_modules_models_fields] ([ref_model_guid]);
 CREATE NONCLUSTERED INDEX [IX_cdcc_constraint_guid] ON [etg].[contracts_db_constraint_columns] ([ref_constraint_guid]);
+CREATE NONCLUSTERED INDEX [IX_cplf_library_guid] ON [etg].[contracts_primitives_libraries_functions] ([ref_library_guid]);
 CREATE NONCLUSTERED INDEX [IX_swh_definition_finished] ON [dbo].[system_workflow_history] ([ref_definition_guid], [pub_finished_on]);
 CREATE NONCLUSTERED INDEX [IX_swh_host] ON [dbo].[system_workflow_history] ([ref_host_guid]);
 
 -- Constraints (PK, UNIQUE, CHECK)
 ALTER TABLE [etg].[contracts_db_operations_models] ADD CONSTRAINT [PK_contracts_db_operations_models] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [etg].[contracts_db_operations_models] ADD CONSTRAINT [UQ_cdom_name] UNIQUE NONCLUSTERED ([pub_name]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models] ADD CONSTRAINT [PK_contracts_primitives_libraries_models] PRIMARY KEY CLUSTERED ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models] ADD CONSTRAINT [UQ_cplm_name] UNIQUE NONCLUSTERED ([pub_name]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [PK_contracts_primitives_libraries_models_fields] PRIMARY KEY CLUSTERED ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [UQ_cplmf_model_name] UNIQUE NONCLUSTERED ([ref_model_guid], [pub_name]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [UQ_cplmf_model_ordinal] UNIQUE NONCLUSTERED ([ref_model_guid], [pub_ordinal]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [CK_cplmf_typed] CHECK (([ref_type_guid] IS NOT NULL AND [ref_type_model_guid] IS NULL OR [ref_type_guid] IS NULL AND [ref_type_model_guid] IS NOT NULL));
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [PK_contracts_modules_dependencies] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [UQ_cmd_module_dependency] UNIQUE NONCLUSTERED ([ref_module_guid], [ref_dependency_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_hashes] ADD CONSTRAINT [PK_contracts_primitives_libraries_hashes] PRIMARY KEY CLUSTERED ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_hashes] ADD CONSTRAINT [UQ_cplh_artifact] UNIQUE NONCLUSTERED ([pub_artifact]);
 ALTER TABLE [dbo].[service_workflow_definitions] ADD CONSTRAINT [PK_service_workflow_definitions] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [dbo].[service_workflow_definitions] ADD CONSTRAINT [UQ_swd_name] UNIQUE NONCLUSTERED ([pub_name]);
 ALTER TABLE [dbo].[service_security_role_groups] ADD CONSTRAINT [PK_service_security_role_groups] PRIMARY KEY CLUSTERED ([key_guid]);
@@ -523,6 +591,8 @@ ALTER TABLE [etg].[contracts_db_tables] ADD CONSTRAINT [UQ_cdt_alias] UNIQUE NON
 ALTER TABLE [etg].[contracts_db_tables] ADD CONSTRAINT [UQ_cdt_schema_name] UNIQUE NONCLUSTERED ([pub_schema], [pub_name]);
 ALTER TABLE [dbo].[system_discord_guilds] ADD CONSTRAINT [PK_system_discord_guilds] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [dbo].[system_discord_guilds] ADD CONSTRAINT [UQ_sdg_guild_id] UNIQUE NONCLUSTERED ([pub_guild_id]);
+ALTER TABLE [etg].[contracts_primitives_libraries] ADD CONSTRAINT [PK_contracts_primitives_libraries] PRIMARY KEY CLUSTERED ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries] ADD CONSTRAINT [UQ_cpl_name] UNIQUE NONCLUSTERED ([pub_name]);
 ALTER TABLE [etg].[contracts_db_index_columns] ADD CONSTRAINT [PK_contracts_db_index_columns] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [etg].[contracts_db_index_columns] ADD CONSTRAINT [UQ_cdic_index_column] UNIQUE NONCLUSTERED ([ref_index_guid], [ref_column_guid]);
 ALTER TABLE [dbo].[service_security_roles] ADD CONSTRAINT [PK_service_security_roles] PRIMARY KEY CLUSTERED ([key_guid]);
@@ -549,6 +619,8 @@ ALTER TABLE [etg].[contracts_db_constraint_columns] ADD CONSTRAINT [UQ_cdcc_cons
 ALTER TABLE [etg].[contracts_db_constraint_columns] ADD CONSTRAINT [UQ_cdcc_constraint_ordinal] UNIQUE NONCLUSTERED ([ref_constraint_guid], [pub_ordinal]);
 ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [PK_system_configuration] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [UQ_sc_key] UNIQUE NONCLUSTERED ([pub_key]);
+ALTER TABLE [etg].[contracts_primitives_libraries_functions] ADD CONSTRAINT [PK_contracts_primitives_libraries_functions] PRIMARY KEY CLUSTERED ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_functions] ADD CONSTRAINT [UQ_cplf_library_name] UNIQUE NONCLUSTERED ([ref_library_guid], [pub_name]);
 ALTER TABLE [etg].[contracts_engines_cloudhost] ADD CONSTRAINT [PK_contracts_engines_cloudhost] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [etg].[contracts_engines_cloudhost] ADD CONSTRAINT [UQ_cec_name] UNIQUE NONCLUSTERED ([pub_name]);
 ALTER TABLE [etg].[contracts_engines_cloudhost] ADD CONSTRAINT [UQ_cec_value] UNIQUE NONCLUSTERED ([pub_value]);
@@ -558,10 +630,17 @@ ALTER TABLE [dbo].[system_workflow_history] ADD CONSTRAINT [PK_system_workflow_h
 
 -- Constraints (FOREIGN KEY)
 ALTER TABLE [etg].[contracts_db_operations_models] ADD CONSTRAINT [FK_cdom_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_primitives_libraries_models] ADD CONSTRAINT [FK_cplm_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [FK_cplmf_model] FOREIGN KEY ([ref_model_guid]) REFERENCES [etg].[contracts_primitives_libraries_models] ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [FK_cplmf_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [FK_cplmf_type] FOREIGN KEY ([ref_type_guid]) REFERENCES [etg].[contracts_primitives_types] ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_models_fields] ADD CONSTRAINT [FK_cplmf_type_model] FOREIGN KEY ([ref_type_model_guid]) REFERENCES [etg].[contracts_primitives_libraries_models] ([key_guid]);
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [FK_cmd_dependency] FOREIGN KEY ([ref_dependency_guid]) REFERENCES [etg].[contracts_modules] ([key_guid]);
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [FK_cmd_kind] FOREIGN KEY ([ref_kind_enum_guid]) REFERENCES [etg].[contracts_primitives_enums] ([key_guid]);
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [FK_cmd_module] FOREIGN KEY ([ref_module_guid]) REFERENCES [etg].[contracts_modules] ([key_guid]);
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [FK_cmd_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_primitives_libraries_hashes] ADD CONSTRAINT [FK_cplh_library] FOREIGN KEY ([ref_library_guid]) REFERENCES [etg].[contracts_primitives_libraries] ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_hashes] ADD CONSTRAINT [FK_cplh_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[service_workflow_definitions] ADD CONSTRAINT [FK_swd_disposition] FOREIGN KEY ([ref_disposition_enum_guid]) REFERENCES [etg].[contracts_primitives_enums] ([key_guid]);
 ALTER TABLE [dbo].[service_workflow_definitions] ADD CONSTRAINT [FK_swd_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[service_security_role_groups] ADD CONSTRAINT [FK_ssrg_group] FOREIGN KEY ([ref_group_guid]) REFERENCES [dbo].[service_security_roles] ([key_guid]);
@@ -589,6 +668,7 @@ ALTER TABLE [etg].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdo
 ALTER TABLE [etg].[contracts_db_operations_models_fields] ADD CONSTRAINT [FK_cdomf_type] FOREIGN KEY ([ref_type_guid]) REFERENCES [etg].[contracts_primitives_types] ([key_guid]);
 ALTER TABLE [etg].[contracts_db_tables] ADD CONSTRAINT [FK_cdt_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[system_discord_guilds] ADD CONSTRAINT [FK_sdg_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_primitives_libraries] ADD CONSTRAINT [FK_cpl_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_column] FOREIGN KEY ([ref_column_guid]) REFERENCES [etg].[contracts_db_columns] ([key_guid]);
 ALTER TABLE [etg].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_index] FOREIGN KEY ([ref_index_guid]) REFERENCES [etg].[contracts_db_indexes] ([key_guid]);
 ALTER TABLE [etg].[contracts_db_index_columns] ADD CONSTRAINT [FK_cdic_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
@@ -619,6 +699,10 @@ ALTER TABLE [etg].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_cons
 ALTER TABLE [etg].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_db_constraint_columns] ADD CONSTRAINT [FK_cdcc_ref_column] FOREIGN KEY ([ref_referenced_column_guid]) REFERENCES [etg].[contracts_db_columns] ([key_guid]);
 ALTER TABLE [dbo].[service_system_configuration] ADD CONSTRAINT [FK_ssc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_primitives_libraries_functions] ADD CONSTRAINT [FK_cplf_input_model] FOREIGN KEY ([ref_input_model_guid]) REFERENCES [etg].[contracts_primitives_libraries_models] ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_functions] ADD CONSTRAINT [FK_cplf_library] FOREIGN KEY ([ref_library_guid]) REFERENCES [etg].[contracts_primitives_libraries] ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_functions] ADD CONSTRAINT [FK_cplf_output_model] FOREIGN KEY ([ref_output_model_guid]) REFERENCES [etg].[contracts_primitives_libraries_models] ([key_guid]);
+ALTER TABLE [etg].[contracts_primitives_libraries_functions] ADD CONSTRAINT [FK_cplf_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_engines_cloudhost] ADD CONSTRAINT [FK_cec_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[system_sequences] ADD CONSTRAINT [FK_ss_kind] FOREIGN KEY ([ref_kind_enum_guid]) REFERENCES [etg].[contracts_primitives_enums] ([key_guid]);
 ALTER TABLE [dbo].[system_sequences] ADD CONSTRAINT [FK_ss_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
