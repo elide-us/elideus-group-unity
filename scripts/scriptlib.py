@@ -141,6 +141,24 @@ async def _merge(conn, table: str, key_column: str, values: dict,
     await cur.execute(sql, params)
 
 
+async def _fk_edges(conn) -> list[tuple[str, str]]:
+  """Every foreign key in the live catalog as a (child, parent) pair of
+  'schema.table' names, self-references included (_seed_order skips them)."""
+  edges = await _query_json(
+    conn,
+    """SELECT
+         ps.name + '.' + pt.name AS child,
+         rs.name + '.' + rt.name AS parent
+       FROM sys.foreign_keys fk
+       JOIN sys.tables pt ON fk.parent_object_id = pt.object_id
+       JOIN sys.schemas ps ON pt.schema_id = ps.schema_id
+       JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id
+       JOIN sys.schemas rs ON rt.schema_id = rs.schema_id
+       FOR JSON PATH"""
+  )
+  return [(e['child'], e['parent']) for e in edges]
+
+
 # =============================================================================
 # Alias generation
 # =============================================================================
@@ -191,8 +209,8 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 # microsoft_database_tools_support (e.g. dbo.sysdiagrams). Skips are printed.
 #
 # Pass-based:
-#   1. Tables       -> contracts_db_tables        (+ pub_seed_element: install
-#                      order by FK dependency depth, see _seed_order)
+#   1. Tables       -> contracts_db_tables        (never pub_seed_element: the
+#                      installer's seed set is authored, so _merge leaves it)
 #   2. Columns      -> contracts_db_columns       (+ pub_exclude_element by the
 #                      _excluded_from_seed name rule)
 #   3. Indexes      -> contracts_db_indexes
@@ -204,8 +222,10 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 #   7. Modules      -> contracts_modules_* from the Python source (see
 #                      "populate: modules" below)
 #
-# Idempotent via MERGE on deterministic key_guid. The flags are derived, not
-# authored: every populate run recomputes them from the live catalog.
+# Idempotent via MERGE on deterministic key_guid. The pass flags
+# (pub_exclude_element, pub_delete_disposition) are derived, not authored:
+# every populate run recomputes them from the live catalog. pub_seed_element
+# is authored (the installer's seed set) and never written here.
 # =============================================================================
 
 async def _load_type_lookup(conn) -> tuple[dict[str, str], dict[str, str]]:
@@ -261,11 +281,6 @@ def _resolve_type_name(base_to_name: dict[str, str], sys_type: str,
 # install; a package file never does.
 PIPELINE_COLUMNS = ('ref_package_guid', 'pub_is_sealed', 'pub_last_version')
 
-# The seed tables the installer carries beyond the manifest rows, the
-# configuration row and the types prelude: what the kernel reads at boot
-# before any package is installed. Everything else is package data.
-BOOTSTRAP_TABLES = ('contracts_primitives_enum_types', 'contracts_primitives_enums')
-
 # The tables populate derives from the live schema and the live code. The
 # installer never embeds their rows: the DDL it emits IS the schema source,
 # the package files carry the module rows, and populate regenerates both.
@@ -284,11 +299,12 @@ def _excluded_from_seed(column_name: str) -> bool:
 
 
 def _seed_order(tables: list[str], edges: list[tuple[str, str]]) -> dict[str, int]:
-  """Install-order ordinal (contracts_db_tables.pub_seed_element) for every
-  reflected table: rank by FK dependency depth so a table sorts after every
+  """Install-order ordinal for the package export set, computed at make time
+  (make_package): rank by FK dependency depth so a table sorts after every
   table it references, ties by schema.name. Self-references are ignored; a
   cycle between distinct tables has no valid install order and fails loud.
-  Every reflected table is a seed table (nonzero)."""
+  Never stored, so it cannot go stale when a foreign key changes; it is not
+  contracts_db_tables.pub_seed_element, the installer's authored seed set."""
   deps: dict[str, set[str]] = {t: set() for t in tables}
   for child, parent in edges:
     if child != parent:
@@ -306,8 +322,6 @@ def _seed_order(tables: list[str], edges: list[tuple[str, str]]) -> dict[str, in
   for t in tables:
     walk(t, ())
   ranked = sorted(tables, key=lambda t: (depth[t], t))
-  if len(ranked) > 255:
-    raise ValueError('pub_seed_element is TINYINT; %d tables exceed 255' % len(ranked))
   return {t: i + 1 for i, t in enumerate(ranked)}
 
 
@@ -339,23 +353,6 @@ async def _populate_tables(conn) -> dict[str, str]:
     else:
       kept.append(r)
   rows = kept
-  edges = await _query_json(
-    conn,
-    """SELECT
-         ps.name + '.' + pt.name AS child,
-         rs.name + '.' + rt.name AS parent
-       FROM sys.foreign_keys fk
-       JOIN sys.tables pt ON fk.parent_object_id = pt.object_id
-       JOIN sys.schemas ps ON pt.schema_id = ps.schema_id
-       JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id
-       JOIN sys.schemas rs ON rt.schema_id = rs.schema_id
-       FOR JSON PATH"""
-  )
-  tables = ['%s.%s' % (r['pub_schema'], r['pub_name']) for r in rows]
-  seed = _seed_order(
-    tables,
-    [(e['child'], e['parent']) for e in edges if e['child'] in tables and e['parent'] in tables],
-  )
   guids: dict[str, str] = {}
   taken_aliases: set[str] = set()
   for r in rows:
@@ -369,7 +366,6 @@ async def _populate_tables(conn) -> dict[str, str]:
       'pub_name': r['pub_name'],
       'pub_schema': r['pub_schema'],
       'pub_alias': alias,
-      'pub_seed_element': seed[natural],
     })
     guids[natural] = g
   print('  tables: %d' % len(guids))
@@ -1100,8 +1096,7 @@ async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
 # make_installer
 # =============================================================================
 
-async def _read_table_projection(conn, table_name: str, package_guid: str | tuple[str, ...] | None = None,
-                                 key_guid: str | tuple[str, ...] | None = None) -> tuple[str, list[str], list[dict]]:
+async def _read_table_projection(conn, table_name: str, package_guid: str | tuple[str, ...] | None = None) -> tuple[str, list[str], list[dict]]:
   """Reads a table's projected columns (filtering pub_exclude_element = 1)
   and returns (schema, column_names, rows). The projection is sourced from
   contracts_db_columns, the same way make_package does it; this keeps
@@ -1110,7 +1105,6 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | tupl
   The projection always carries the PIPELINE_COLUMNS: the installer embeds
   them, make_package strips them.
   package_guid: return only the rows that package (or those packages) own.
-  key_guid: return only that row, or those rows (the manifest's package rows).
 
   Sort: key_guid (the clustered key), the same for every table."""
   table_row = await _query_json(
@@ -1133,10 +1127,6 @@ async def _read_table_projection(conn, table_name: str, package_guid: str | tupl
     owners = (package_guid,) if isinstance(package_guid, str) else tuple(package_guid)
     where.append('ref_package_guid IN (%s)' % ', '.join('?' * len(owners)))
     params.extend(owners)
-  if key_guid:
-    keys = (key_guid,) if isinstance(key_guid, str) else tuple(key_guid)
-    where.append('key_guid IN (%s)' % ', '.join('?' * len(keys)))
-    params.extend(keys)
   # Clustered key order: no sort, deterministic, not for human reading.
   order_by = 'key_guid'
   select_list = ', '.join(columns)
@@ -1366,28 +1356,30 @@ def _build_table_seed(schema: str, table_name: str, columns: list[str], rows: li
 async def make_installer(conn, prefix: str = 'installer') -> str:
   print('Reading schema...')
   # The installer is the BOOTSTRAP, nothing more: the tables the kernel owns
-  # (the type graph and the manifest / configuration tables), the kernel,
-  # core and setup manifest rows, the core-owned base types in the prelude,
-  # the database version and the enums, ref_package_guid carried through.
-  # Every other row belongs to a package file (kernel, core, setup): the
-  # kernel's operations, models and module contracts included. A package
-  # file declares its own tables (install materializes them, uninstall
-  # drops them) and carries its rows.
-  package_guids = (KERNEL_GUID, CORE_GUID, SETUP_GUID)
-  manifest_schema, manifest_columns, manifest_rows = await _read_table_projection(conn, MANIFEST_TABLE, key_guid=package_guids)
-  if len(manifest_rows) != len(package_guids):
-    raise ValueError('expected the kernel, core and setup rows in %s, found %d; apply the manifest batch before generating' % (_mt(), len(manifest_rows)))
-  types_schema, types_columns, types = await _read_table_projection(conn, 'contracts_primitives_types', package_guid=CORE_GUID)
-  # Bootstrap seed rows: the BOOTSTRAP_TABLES in install order, only the
-  # rows the kernel owns. Manifest, configuration and types are emitted
-  # above; nothing else is in the installer.
+  # (the type graph and the manifest / configuration tables), the rows the
+  # kernel reads at boot before any package is installed, and the database
+  # version. One rule picks those rows: every table flagged in
+  # contracts_db_tables.pub_seed_element (authored, never derived), ALL its
+  # rows whoever owns them, ref_package_guid carried through, emitted in
+  # the flag's ordinal order. Every other row belongs to a package file
+  # (kernel, core, setup): the kernel's operations, models and module
+  # contracts included. A package file declares its own tables (install
+  # materializes them, uninstall drops them) and carries its rows.
+  seed_tables = await _read_seed_table_list(conn)
+  if not seed_tables:
+    raise ValueError('no table in %s has pub_seed_element > 0; the installer would carry no seed rows' % _kt('contracts_db_tables'))
   seeds: list[tuple[str, str, list[str], list[dict]]] = []
-  for t in await _read_seed_table_list(conn):
-    if t['pub_name'] not in BOOTSTRAP_TABLES:
-      continue
-    seed_schema, seed_columns, seed_rows = await _read_table_projection(conn, t['pub_name'], package_guid=KERNEL_GUID)
-    if seed_rows:
-      seeds.append((seed_schema, t['pub_name'], seed_columns, seed_rows))
+  for t in seed_tables:
+    seed_schema, seed_columns, seed_rows = await _read_table_projection(conn, t['pub_name'])
+    if not seed_rows:
+      raise ValueError('%s is flagged pub_seed_element=%d but has no rows' % (t['pub_name'], t['pub_seed_element']))
+    seeds.append((seed_schema, t['pub_name'], seed_columns, seed_rows))
+  # Install registers packages against these three rows; an installer
+  # without them bootstraps a database no package can install into.
+  manifest_rows = next((rows for _, table, _, rows in seeds if table == MANIFEST_TABLE), [])
+  missing = {KERNEL_GUID, CORE_GUID, SETUP_GUID} - {r['key_guid'].upper() for r in manifest_rows}
+  if missing:
+    raise ValueError('the %s seed lacks the kernel, core or setup row (%s); flag it with pub_seed_element and apply the manifest batch before generating' % (_mt(), ', '.join(sorted(missing))))
   schema = await _read_schema(conn)
 
   # Only the kernel-owned tables are in the installer; a package's tables
@@ -1418,7 +1410,6 @@ async def make_installer(conn, prefix: str = 'installer') -> str:
     for con in types_constraints:
       ref_table = table_by_guid.get(con['ref_referenced_table_guid']) if con.get('ref_referenced_table_guid') else None
       sections.append(_build_constraint(con, types_table, ref_table, schema['constraint_columns']))
-  sections.append(_build_table_seed(types_schema, 'contracts_primitives_types', types_columns, types))
   sections.append('GO')
   sections.append('')
 
@@ -1431,22 +1422,24 @@ async def make_installer(conn, prefix: str = 'installer') -> str:
       continue
     sections.append(_build_create_table(table, schema['columns']))
   sections.append('GO')
-  sections.append(_build_table_seed(manifest_schema, MANIFEST_TABLE, manifest_columns, manifest_rows))
-  sections.append('GO')
-  sections.append('')
-
-  # The database schema version the kernel was built for, keyed by formula.
-  sections.append(_build_table_seed(MANIFEST_SCHEMA, 'service_system_configuration',
-    ['key_guid', 'ref_package_guid', 'pub_key', 'pub_value'],
-    [{'key_guid': _guid('service_system_configuration', 'database_version'), 'ref_package_guid': KERNEL_GUID,
-      'pub_key': 'database_version', 'pub_value': DATABASE_VERSION}]))
-  sections.append('GO')
   sections.append('')
 
   for seed_schema, seed_table, seed_columns, seed_rows in seeds:
     sections.append('-- %s seed' % seed_table)
     sections.append(_build_table_seed(seed_schema, seed_table, seed_columns, seed_rows))
     sections.append('')
+  sections.append('GO')
+  sections.append('')
+
+  # The database schema version the kernel was built for, keyed by formula.
+  # Coded, not seeded: it is the kernel's build version, so
+  # service_system_configuration is no seed table.
+  sections.append(_build_table_seed(MANIFEST_SCHEMA, 'service_system_configuration',
+    ['key_guid', 'ref_package_guid', 'pub_key', 'pub_value'],
+    [{'key_guid': _guid('service_system_configuration', 'database_version'), 'ref_package_guid': KERNEL_GUID,
+      'pub_key': 'database_version', 'pub_value': DATABASE_VERSION}]))
+  sections.append('GO')
+  sections.append('')
 
   sections.append('-- Indexes')
   for idx in schema['indexes']:
@@ -1524,13 +1517,21 @@ async def apply(conn, path: str) -> None:
 # make_package
 # =============================================================================
 #
-# Exports ONE package — the rows it owns across the seed tables — as
-# <name>.json.gz. Fully data-driven: the seed table list, the install
+# Exports ONE package — the rows it owns across the export tables — as
+# <name>.json.gz. Fully data-driven: the export table list, the install
 # order, and the per-table column projections all come from the database.
 #
-# Seed-set membership and load order: contracts_db_tables.pub_seed_element.
-# Zero means not seed; nonzero is the install-order ordinal (populate assigns
-# it from FK dependency depth, see _seed_order).
+# Export-set membership: dbo.service_package_tables, one row per table whose
+# rows are package data. Setup-owned, so the list ships in setup.json.gz and
+# lists itself. Runtime tables (hosts, the workflow queue and history,
+# sequence allocations) are deliberately absent: no package carries them.
+#
+# Load order: FK dependency depth computed from the live sys.foreign_keys at
+# make time (_fk_edges, _seed_order), so a table loads after every table it
+# references. Never stored, so a new foreign key cannot leave it stale.
+#
+# contracts_db_tables.pub_seed_element is a different fact: the installer's
+# seed set and emission order (make_installer), authored, not populated.
 #
 # Per-table projection: every column on the table except priv_* timestamps
 # and the PIPELINE_COLUMNS (contracts_db_columns.pub_exclude_element, which
@@ -1546,7 +1547,9 @@ async def apply(conn, path: str) -> None:
 # =============================================================================
 
 async def _read_seed_table_list(conn) -> list[dict]:
-  """Returns seed-flagged tables ordered by their install-order ordinal."""
+  """Returns the INSTALLER's seed set: the tables flagged in pub_seed_element
+  (authored, populate never writes it), in that ordinal's emission order.
+  The package export set is _read_package_table_list."""
   return await _query_json(
     conn,
     f"""SELECT key_guid, pub_name, pub_schema, pub_seed_element
@@ -1559,7 +1562,7 @@ async def _read_seed_table_list(conn) -> list[dict]:
 
 async def _read_seed_column_projection(conn, table_guid: str,
                                        keep: tuple[str, ...] = ()) -> list[str]:
-  """Returns the projected column names for a seed table, in pub_ordinal
+  """Returns the projected column names for an installer seed or package export table, in pub_ordinal
   order. Excludes columns flagged with pub_exclude_element = 1, except any
   named in keep. The installer keeps the PIPELINE_COLUMNS: the kernel DDL is
   the kernel package's own install, so its embedded seeds carry ownership
@@ -1575,8 +1578,27 @@ async def _read_seed_column_projection(conn, table_guid: str,
   )
   return [r['pub_name'] for r in rows if not r['pub_exclude_element'] or r['pub_name'] in keep]
 
+
+async def _read_package_table_list(conn) -> list[dict]:
+  """Returns the package export set (dbo.service_package_tables) in install
+  order: FK dependency depth over the live sys.foreign_keys among the set's
+  own tables, see _seed_order."""
+  tables = await _query_json(
+    conn,
+    f"""SELECT [cdt].[key_guid], [cdt].[pub_name], [cdt].[pub_schema]
+       FROM {_qt(MANIFEST_SCHEMA, 'service_package_tables')} AS [spt]
+       JOIN {_kt('contracts_db_tables')} AS [cdt] ON [cdt].[key_guid] = [spt].[ref_table_guid]
+       FOR JSON PATH"""
+  )
+  if not tables:
+    raise ValueError('%s is empty; no table is package data' % _qt(MANIFEST_SCHEMA, 'service_package_tables'))
+  by_name = {'%s.%s' % (t['pub_schema'], t['pub_name']): t for t in tables}
+  order = _seed_order(list(by_name), [e for e in await _fk_edges(conn) if e[0] in by_name and e[1] in by_name])
+  return [by_name[n] for n in sorted(order, key=order.get)]
+
+
 async def make_package(conn, name: str = 'kernel') -> None:
-  """Export ONE package: every row it owns across the seed tables, in install
+  """Export ONE package: every row it owns across the export tables, in install
   order, as <name>.json.gz — its own manifest row included, since a package
   owns that row. The version comes from the manifest row. The PIPELINE_COLUMNS
   are not exported: install sets them."""
@@ -1590,10 +1612,10 @@ async def make_package(conn, name: str = 'kernel') -> None:
     raise ValueError('package %s (%s) not found in %s' % (name, pkg_guid, _mt()))
   version = manifest[0]['pub_version']
 
-  seed_tables = await _read_seed_table_list(conn)
+  package_tables = await _read_package_table_list(conn)
   rows: list[dict] = []
   counts: dict[str, int] = {}
-  for t in seed_tables:
+  for t in package_tables:
     table_name = t['pub_name']
     _, _, table_rows = await _read_table_projection(conn, table_name, package_guid=pkg_guid)
     for row in table_rows:
