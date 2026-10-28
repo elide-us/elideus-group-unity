@@ -227,7 +227,3 @@ class PackageManifestRow(BaseModel):
   pub_version: str
   pub_is_sealed: bool
 
-# This late import is required to resolve the circlar dependency 
-# between the KernelModuleManager and the Kernel re-export
-from ..lifecycle_manager import LifecycleManager
-__all__ = ["LifecycleManager"]

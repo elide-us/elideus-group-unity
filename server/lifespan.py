@@ -3,7 +3,7 @@ import logging, os
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from server.kernel import LifecycleManager
+from server.lifecycle_manager import LifecycleManager
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
