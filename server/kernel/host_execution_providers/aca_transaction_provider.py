@@ -1,21 +1,21 @@
 import logging
 
 from server.kernel.database_operations_module import DBRequest
-from . import BaseKernelHostProvider, ServiceHost
+from server.kernel.host_execution_providers import BaseKernelHostProvider, ServiceHost
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 # The registry operations this provider dispatches (kernel-owned bootstrap rows).
-REGISTER = "db:host:register:1"
-SEAL = "db:host:seal:1"
-SET_STATUS = "db:host:set_status:1"
-HEARTBEAT = "db:host:heartbeat:1"
-READ = "db:host:read:1"
-RELEASE_STALE = "db:host:release_stale:1"
-RELOAD = "db:host:reload:1"
+REGISTER = "db:service:host:register:1"
+SEAL = "db:service:host:seal:1"
+SET_STATUS = "db:service:host:set_status:1"
+HEARTBEAT = "db:service:host:heartbeat:1"
+READ = "db:service:host:read:1"
+RELEASE_STALE = "db:service:host:release_stale:1"
+RELOAD = "db:service:host:reload:1"
 
 
-class KernelHostProvider(BaseKernelHostProvider):
+class AcaTransactionProvider(BaseKernelHostProvider):
   async def connect(self):
     pass
 

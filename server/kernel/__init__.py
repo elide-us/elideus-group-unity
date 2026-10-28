@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # Database schema version this kernel is built for. Setup mode compares it
 # with the database_version configuration row; the installer and migration
 # scripts are generated from it.
-DATABASE_VERSION = "0.1.6"
+DATABASE_VERSION = "0.1.9"
 
 # The code a host ends its process with when its registry row says
 # RELOADING, for the host runtime to restart it on: neither 0 (setup mode's
@@ -127,12 +127,12 @@ class BaseProvider(ABC):
 #                   dependents via `await dep.await_ready()`. Backed by
 #                   this module's own _ready_event.
 #
-#   Manager-sealed  All modules have completed on_seal() and the full
+#   Lifecycle-sealed  All modules have completed on_seal() and the full
 #                   application graph is initialized. Set by the
-#                   ModuleManager at the end of _seal();
-#                   observed via `manager.is_sealed` (sync read) or
-#                   `await manager.await_sealed()` (async wait). Backed by
-#                   the manager's _sealed_event.
+#                   LifecycleManager at the end of _seal(); observed via
+#                   `app.state.lifecycle_manager.is_sealed` (sync read) or
+#                   `await app.state.lifecycle_manager.await_sealed()`
+#                   (async wait). Backed by the lifecycle's _sealed_event.
 #
 # Both events are in-memory only. A full shutdown/startup cycle clears
 # and re-raises them through the normal phase boundaries.
@@ -185,12 +185,8 @@ class BaseModule(ABC):
   async def await_ready(self):
     await self._ready_event.wait()
 
-  @property
-  def module_manager(self) -> "KernelModuleManager":
-    return self.app.state.module_manager
-
   def get_module(self, module_type: Type[T]) -> T:
-    return self.module_manager._get_module(module_type)
+    return self.app.state.module_manager.get(module_type)
 
 
 # ----------------------------------------------------------------------------
@@ -227,7 +223,3 @@ class PackageManifestRow(BaseModel):
   pub_version: str
   pub_is_sealed: bool
 
-# This late import is required to resolve the circlar dependency 
-# between the KernelModuleManager and the Kernel re-export
-from .kernel_module_manager import KernelModuleManager
-__all__ = ["KernelModuleManager"]

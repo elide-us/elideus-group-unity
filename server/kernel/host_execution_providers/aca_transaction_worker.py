@@ -1,11 +1,11 @@
 import asyncio, logging
 
-from . import BaseKernelHostWorker
+from server.kernel.host_execution_providers import BaseKernelHostWorker
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class KernelHostWorker(BaseKernelHostWorker):
+class AcaTransactionWorker(BaseKernelHostWorker):
   def __init__(self, executor, cadence_seconds: int):
     # Seconds between passes (one heartbeat and one read of the process's own
     # row): the host_heartbeat_seconds configuration row. Must stay well
@@ -22,7 +22,7 @@ class KernelHostWorker(BaseKernelHostWorker):
   async def stop(self) -> None:
     self._stop.set()
     if self._task is not None:
-      if not self._executor.module_manager.is_sealed:
+      if not self._executor.app.state.lifecycle_manager.is_sealed:
         # Never sealed (a startup that failed): the loop is still parked on
         # await_sealed() and would never see the stop.
         self._task.cancel()
@@ -34,7 +34,7 @@ class KernelHostWorker(BaseKernelHostWorker):
 
   async def _run(self) -> None:
     # Operational work waits for the application to seal.
-    await self._executor.module_manager.await_sealed()
+    await self._executor.app.state.lifecycle_manager.await_sealed()
     logger.info("Host worker running (cadence %ds)", self._cadence)
     while not self._stop.is_set():
       try:
