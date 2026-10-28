@@ -13,8 +13,8 @@ FAIL = "db:workflow:queue:fail:1"
 RETRY = "db:workflow:queue:retry:1"
 RELEASE_STALE = "db:workflow:queue:release_stale:1"
 READ = "db:workflow:queue:read:1"
-SEQUENCE_ALLOCATE = "db:sequence:allocate:1"
-SEQUENCE_NEXT = "db:sequence:next:1"
+SEQUENCE_ALLOCATE = "db:system:sequence:allocate:1"
+SEQUENCE_NEXT = "db:system:sequence:next:1"
 RECORD_HISTORY = "db:workflow:history:record:1"
 
 

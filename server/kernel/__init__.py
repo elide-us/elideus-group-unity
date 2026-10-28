@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # Database schema version this kernel is built for. Setup mode compares it
 # with the database_version configuration row; the installer and migration
 # scripts are generated from it.
-DATABASE_VERSION = "0.1.6"
+DATABASE_VERSION = "0.1.7"
 
 # The code a host ends its process with when its registry row says
 # RELOADING, for the host runtime to restart it on: neither 0 (setup mode's
@@ -186,7 +186,7 @@ class BaseModule(ABC):
     await self._ready_event.wait()
 
   @property
-  def module_manager(self) -> "KernelModuleManager":
+  def module_manager(self) -> "LifecycleManager":
     return self.app.state.module_manager
 
   def get_module(self, module_type: Type[T]) -> T:
@@ -229,5 +229,5 @@ class PackageManifestRow(BaseModel):
 
 # This late import is required to resolve the circlar dependency 
 # between the KernelModuleManager and the Kernel re-export
-from .kernel_module_manager import KernelModuleManager
-__all__ = ["KernelModuleManager"]
+from ..lifecycle_manager import LifecycleManager
+__all__ = ["LifecycleManager"]

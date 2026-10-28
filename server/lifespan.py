@@ -3,23 +3,23 @@ import logging, os
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from server.kernel import KernelModuleManager
+from server.kernel import LifecycleManager
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-  modules = KernelModuleManager(app)
+  lifecycle = LifecycleManager(app)
   try:
     try:
-      await modules.startup()
+      await lifecycle.startup()
     except (RuntimeError, SystemExit) as stop:
       # RuntimeError: the kernel refused to start (e.g. database version
       # mismatch). SystemExit: it finished a startup task and asks to stop.
       # One line, no traceback: Starlette would otherwise print the stack.
       if isinstance(stop, RuntimeError):
         logger.error("Startup refused: %s", stop)
-      await modules.shutdown()
+      await lifecycle.shutdown()
       os._exit(stop.code if isinstance(stop, SystemExit) else 1)
 
     # mcp_module = app.state.mcp_io_service
@@ -30,5 +30,5 @@ async def lifespan(app: FastAPI):
     #   yield
     yield
   finally:
-    await modules.shutdown()
+    await lifecycle.shutdown()
   

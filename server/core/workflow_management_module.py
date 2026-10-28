@@ -12,7 +12,7 @@ from server.kernel import BaseModule
 from server.kernel.database_operations_module import DatabaseOperationsModule
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
 from server.kernel.kernel_configuration_module import KernelConfigurationModule
-from server.kernel.kernel_host_management_module import KernelHostManagementModule
+from server.kernel.host_operations_module import KernelHostManagementModule
 from server.helpers import discover_classes, deterministic_guid
 from .workflow_execution_providers import BaseWorkflowManagementProvider, BaseWorkflowTaskProvider, BaseWorkflowTaskWorker, WorkflowHistoryRecord, WorkflowQueueClaim
 

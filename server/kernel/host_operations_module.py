@@ -11,7 +11,7 @@ from .database_operations_module import DatabaseOperationsModule
 from .environment_variables_module import EnvironmentVariablesModule
 from .kernel_configuration_module import KernelConfigurationModule
 from server.helpers import discover_classes, deterministic_guid
-from .kernel_host_execution_providers import BaseKernelHostProvider, BaseKernelHostWorker
+from .host_execution_providers import BaseKernelHostProvider, BaseKernelHostWorker
 
 logger = logging.getLogger(__name__.split('.')[-1])
 

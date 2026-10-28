@@ -6,8 +6,8 @@ from typing import Dict, NoReturn, Type, TypeVar
 
 from server.helpers import discover_classes, deterministic_guid, pascal_to_snake
 from server.kernel import BaseModule, ModuleListing, PackageManifestRow, T
-from .database_operations_module import DatabaseOperationsModule, DBRequest
-from .environment_variables_module import EnvironmentVariablesModule
+from .kernel.database_operations_module import DatabaseOperationsModule, DBRequest
+from .kernel.environment_variables_module import EnvironmentVariablesModule
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -122,7 +122,7 @@ R = TypeVar("R", bound=BaseModel)
 #
 # ----------------------------------------------------------------------------
 
-class KernelModuleManager:
+class LifecycleManager:
   def __init__(self, app: FastAPI):
     self.app = app
     self._instances: Dict[type, BaseModule] = {}

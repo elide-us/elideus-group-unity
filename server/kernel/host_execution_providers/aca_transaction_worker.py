@@ -1,11 +1,11 @@
 import asyncio, logging
 
-from . import BaseKernelHostWorker
+from host_execution_providers import BaseKernelHostWorker
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class KernelHostWorker(BaseKernelHostWorker):
+class AcaTransactionWorker(BaseKernelHostWorker):
   def __init__(self, executor, cadence_seconds: int):
     # Seconds between passes (one heartbeat and one read of the process's own
     # row): the host_heartbeat_seconds configuration row. Must stay well
