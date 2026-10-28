@@ -175,7 +175,7 @@ class WorkflowManagementModule(BaseModule):
     module_name, _, function = contract.partition(".")
     if not module_name or not function or function.startswith("_"):
       raise ValueError("step contract '%s' is not <Module>.<function>" % contract)
-    instance = self.module_manager.get_module_by_name(module_name)
+    instance = self.app.state.module_manager.get_by_name(module_name)
     if instance is None:
       raise ValueError("step contract '%s': module %s is not loaded" % (contract, module_name))
     fn = getattr(instance, function, None)

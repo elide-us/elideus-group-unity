@@ -3,6 +3,7 @@ import logging
 import os
 import socket
 import uuid
+from enum import IntEnum
 
 from fastapi import FastAPI
 
@@ -144,7 +145,7 @@ class HostExecutionModule(BaseModule):
     })
     logger.info("Host %s SEALED", self._key_guid)
 
-  async def set_status(self, status) -> None:
+  async def set_status(self, status: IntEnum) -> None:
     await self._one(SET_STATUS, {"ref_status_enum_guid": self._status(status), "key_guid": self.instance_key()})
     logger.info("Host %s %s", self._key_guid, status.name)
 
@@ -173,7 +174,7 @@ class HostExecutionModule(BaseModule):
       self._reload.set()
     return True
 
-  def _status(self, status) -> str:
+  def _status(self, status: IntEnum) -> str:
     # The enum row key the ops take until v0.1.8 moves them to the value.
     return deterministic_guid(self._namespace, "contracts_primitives_enums", "host_status.%s" % status.name)
 

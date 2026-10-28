@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # ----------------------------------------------------------------------------
 # ModuleManager
 # ----------------------------------------------------------------------------
+# RESPONSIBILITY: loading and unloading modules. That is it. Code that is
+# not that does not belong here; if it lands here it is called out below.
+#
 # Module loading: the gather. Index the whole server folder for *_module.py
 # files, import each, instantiate its class, register the instance, and start
 # the instances. That is the only responsibility. Phases past startup, the
@@ -27,6 +30,10 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #       Concurrent startup() on the given registered modules: the same
 #       multi-fire init as before. Ordering emerges from await_ready() waits
 #       inside the modules; the manager enforces none.
+#
+#   stop_all() -> None
+#       Concurrent shutdown() on every registered module, then the registry
+#       is cleared: the unload, the mirror of start_all.
 #
 #   get(module_type) / get_by_name(name)
 #       The registry, by type and by class name.
@@ -88,6 +95,17 @@ class ModuleManager:
       _start_module(module_class, self._instances[module_class]) for module_class in module_classes
     ))
     logger.info("start_all successful")
+
+  async def stop_all(self):
+    async def _stop_module(module_class: type, module: BaseModule):
+      await module.shutdown()
+      logger.info("'%s' stopped", module_class.__name__)
+
+    await asyncio.gather(*(
+      _stop_module(module_class, module) for module_class, module in self._instances.items()
+    ))
+    self._instances.clear()
+    logger.info("stop_all successful")
 
   def get(self, module_type: Type[T]) -> T:
     instance = self._instances.get(module_type)

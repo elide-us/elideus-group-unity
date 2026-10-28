@@ -748,7 +748,7 @@ async def _populate_procedures(conn) -> int:
 # =============================================================================
 
 _PY_TO_TYPE = {'str': 'STRING', 'int': 'INT32', 'bool': 'BOOL', 'float': 'FLOAT64', 'bytes': 'BINARY'}
-_UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'KernelModuleManager', 'BaseDatabaseTransactionProvider'}
+_UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'BaseDatabaseTransactionProvider'}
 _COLLECTION_NAMES = {'list', 'set', 'Iterable'}
 _RECORD_MODELS = {'DBRequest': 'db_request'}   # + every Pydantic BaseModel class, registered at reflection
 _RECORD_MODEL_BASE = 'BaseModel'

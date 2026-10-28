@@ -27,6 +27,9 @@ R = TypeVar("R", bound=BaseModel)
 # ----------------------------------------------------------------------------
 # LifecycleManager
 # ----------------------------------------------------------------------------
+# RESPONSIBILITY: the status of the application. That is it. Code that is
+# not that does not belong here; if it lands here it is called out below.
+#
 # The application lifecycle, handled internally: the hosting environment
 # hoists the lifespan and runs nothing after yield, so everything the
 # application does to start, seal, drain, stop and exit happens here. The
@@ -34,7 +37,7 @@ R = TypeVar("R", bound=BaseModel)
 #
 # It orchestrates two owners and calls their APIs:
 #   ModuleManager          loads the modules (the gather: every *_module.py
-#                          under server/) and starts them; owns the registry.
+#                          under server/), starts and stops them; owns the registry.
 #   HostOperationsModule   records this instance's state. The lifecycle
 #                          writes SEALED, DRAINING and STOPPED at its own
 #                          boundaries; STARTING is the host's registration.
@@ -59,7 +62,7 @@ R = TypeVar("R", bound=BaseModel)
 #
 #   shutdown():
 #     1. host DRAINING, _drain_all()   Concurrent on_unseal(): stop taking work.
-#     2. host STOPPED, _stop_all()     STOPPED is written before the stop
+#     2. host STOPPED, modules.stop_all()   STOPPED is written before the stop
 #                                      phase closes the pool (Aaron 2026-10-20).
 #     3. _unseal()                     _sealed_event.clear().
 #
@@ -73,7 +76,8 @@ R = TypeVar("R", bound=BaseModel)
 # -- Sealed state ------------------------------------------------------------
 # _sealed_event is set at the end of _seal() and cleared in _unseal(). Modules
 # read `is_sealed` (sync) or wait on `await_sealed()` (async) through
-# app.state.module_manager, which is this object. Not persisted.
+# app.state.lifecycle_manager, which is this object. The registry is the
+# module manager's, app.state.module_manager. Not persisted.
 #
 # -- Design principles -------------------------------------------------------
 # Only the contract is called. No references are passed between modules, no
@@ -99,7 +103,8 @@ class LifecycleManager:
     await self._sealed_event.wait()
 
   async def startup(self):
-    self.app.state.module_manager = self
+    self.app.state.module_manager = self.modules
+    self.app.state.lifecycle_manager = self
 
     loaded = self.modules.discover()
     await self.modules.start_all(loaded)
@@ -113,34 +118,38 @@ class LifecycleManager:
     await self._set_host_status("DRAINING")
     await self._drain_all()
     await self._set_host_status("STOPPED")
-    await self._stop_all()
+    await self.modules.stop_all()
+    self._host = None
+    self._host_status = None
     self._unseal()
 
+  # -- Restart (application status; the orchestration is not complete) ------
+  # restart() is the lifecycle's: it orchestrates the restart of the
+  # application, which is the shutdown and restart of the modules AND of the
+  # hosts. What it should do, in order: write the host status for the
+  # restart, drain (on_unseal) and unseal, unload the modules through the
+  # module manager, reload and start them again, re-check the listing, seal,
+  # and bring the host row back to SEALED. Today it only cycles each loaded
+  # module in place (shutdown, new instance, startup) and touches neither
+  # the phases nor the host; the host interface it needs is not built yet,
+  # so the host side is left out on purpose (Aaron 2026-10-28). Not called.
   async def restart(self):
     for module_class in list(self.modules.instances.keys()):
       await self._restart(module_class)
     logger.info("Restart complete")
 
   async def _restart(self, module_type: Type[T]) -> T:
-    instance = self._get_module(module_type)
+    instance = self.modules.get(module_type)
     await instance.shutdown()
     new_instance = module_type(self.app)
     self.modules.instances[module_type] = new_instance
     await new_instance.startup()
     return new_instance
 
-  # -- Registry (the module manager's; forwarded for app.state.module_manager)
-
-  def _get_module(self, module_type: Type[T]) -> T:
-    return self.modules.get(module_type)
-
-  def get_module_by_name(self, name: str) -> BaseModule | None:
-    return self.modules.get_by_name(name)
-
   # -- Startup ---------------------------------------------------------------
 
   async def _check_listing(self, loaded: list[type]):
-    database = self._get_module(DatabaseOperationsModule)
+    database = self.modules.get(DatabaseOperationsModule)
     listings = await self._read_rows(database, MODULES_READ_ALL, ModuleListing)
     manifest = {package.key_guid: package for package in await self._read_rows(database, MANIFEST_ROWS, PackageManifestRow)}
 
@@ -149,7 +158,7 @@ class LifecycleManager:
       if module_class.__name__ not in listed_names:
         self._refuse("module %s is not listed in contracts_modules" % module_class.__name__)
 
-    namespace = uuid.UUID(self._get_module(EnvironmentVariablesModule).get("NS_HASH"))
+    namespace = uuid.UUID(self.modules.get(EnvironmentVariablesModule).get("NS_HASH"))
     roles = {deterministic_guid(namespace, "contracts_primitives_enums", "module_role.%s" % role) for role in LOADABLE_ROLES}
     loaded_names = {module_class.__name__ for module_class in loaded}
     for listing in listings:
@@ -193,8 +202,8 @@ class LifecycleManager:
     self._sealed_event.set()
     logger.info("seal - sealed")
 
-    self._host = self._get_module(HostOperationsModule)
-    self._host_status = self._get_module(KernelEnumModule).get("host_status")
+    self._host = self.modules.get(HostOperationsModule)
+    self._host_status = self.modules.get(KernelEnumModule).get("host_status")
     await self._host.seal()
     self._reload_watch = asyncio.create_task(self._reload_exit())
 
@@ -233,19 +242,6 @@ class LifecycleManager:
       _unseal_module(module) for module in self.modules.instances.values()
     ))
     logger.info("drain_all - %d modules drained", len(self.modules.instances))
-
-  async def _stop_all(self):
-    async def _stop_module(module_class: type, module: BaseModule):
-      await module.shutdown()
-      logger.info("'%s' stopped", module_class.__name__)
-
-    await asyncio.gather(*(
-      _stop_module(module_class, module) for module_class, module in self.modules.instances.items()
-    ))
-    self.modules.instances.clear()
-    self._host = None
-    self._host_status = None
-    logger.info("stop_all successful")
 
   def _unseal(self):
     self._sealed_event.clear()

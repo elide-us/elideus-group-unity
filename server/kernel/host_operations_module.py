@@ -1,4 +1,5 @@
 import logging
+from enum import IntEnum
 
 from fastapi import FastAPI
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # -- Contract ----------------------------------------------------------------
 #   host_key() -> str                 this process's boot GUID, its service_hosts key
 #   seal() -> None                    SEALED, stamping the core manifest version
-#   set_status(member) -> None        a host_status member name onto the own row
+#   set_status(member) -> None        a host_status member onto the own row
 #   reload(key_guid) -> None          the target host, live and SEALED, becomes RELOADING
 #   await_reload() -> None            resolves once the own row has read RELOADING
 #
@@ -46,7 +47,7 @@ class HostOperationsModule(BaseModule):
   async def seal(self) -> None:
     await self._execution.seal()
 
-  async def set_status(self, member: str) -> None:
+  async def set_status(self, member: IntEnum) -> None:
     await self._execution.set_status(member)
 
   async def reload(self, key_guid: str) -> None:
