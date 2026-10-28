@@ -1,6 +1,6 @@
 import asyncio, logging
 
-from host_execution_providers import BaseKernelHostWorker
+from server.kernel.host_execution_providers import BaseKernelHostWorker
 
 logger = logging.getLogger(__name__.split('.')[-1])
 

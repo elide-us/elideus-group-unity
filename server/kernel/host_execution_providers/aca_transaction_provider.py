@@ -1,7 +1,7 @@
 import logging
 
 from server.kernel.database_operations_module import DBRequest
-from host_execution_providers import BaseKernelHostProvider, ServiceHost
+from server.kernel.host_execution_providers import BaseKernelHostProvider, ServiceHost
 
 logger = logging.getLogger(__name__.split('.')[-1])
 

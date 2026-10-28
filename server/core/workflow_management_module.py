@@ -12,8 +12,7 @@ from server.kernel import BaseModule
 from server.kernel.database_operations_module import DatabaseOperationsModule
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
 from server.kernel.kernel_configuration_module import KernelConfigurationModule
-from server.kernel.host_operations_module import KernelHostManagementModule
-from server.helpers import discover_classes, deterministic_guid
+from server.helpers import discover_classes, deterministic_guid, instance_key
 from .workflow_execution_providers import BaseWorkflowManagementProvider, BaseWorkflowTaskProvider, BaseWorkflowTaskWorker, WorkflowHistoryRecord, WorkflowQueueClaim
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -75,7 +74,6 @@ class WorkflowSteps(BaseModel):
 #
 # -- Dependencies ------------------------------------------------------------
 #   DatabaseOperationsModule, EnvironmentVariablesModule (NS_HASH),
-#   KernelHostManagementModule (host_key = who ran a history row),
 #   KernelConfigurationModule (stale_grace_seconds = the stale-claim sweep,
 #   workflow_poll_seconds = the worker cadence on an empty queue)
 #   workflow_execution_providers/*_provider, *_worker
@@ -100,7 +98,6 @@ class WorkflowManagementModule(BaseModule):
     self._definitions_provider: BaseWorkflowManagementProvider | None = None
     self._task_provider: BaseWorkflowTaskProvider | None = None
     self._worker: BaseWorkflowTaskWorker | None = None
-    self._host: KernelHostManagementModule | None = None
     self._namespace: uuid.UUID | None = None
     self._grace: int = 0
     self._poll: int = 0
@@ -121,8 +118,6 @@ class WorkflowManagementModule(BaseModule):
     await configuration.await_ready()
     self._grace = int(configuration.get(GRACE_KEY))
     self._poll = int(configuration.get(POLL_KEY))
-    self._host = self.get_module(KernelHostManagementModule)
-    await self._host.await_ready()
     self._status = {n: deterministic_guid(self._namespace, "contracts_primitives_enums", "task_status.%s" % n) for n in STATUSES}
     self._disposition = {n: deterministic_guid(self._namespace, "contracts_primitives_enums", "task_disposition.%s" % n) for n in DISPOSITIONS}
     self._sequence_guid = deterministic_guid(self._namespace, "system_sequences", BATCH_SEQUENCE)
@@ -227,7 +222,7 @@ class WorkflowManagementModule(BaseModule):
       ref_package_guid=claimed.ref_package_guid,
       ref_definition_guid=claimed.ref_definition_guid,
       ref_instance_guid=claimed.key_guid,
-      ref_host_guid=self._host.host_key(),
+      ref_host_guid=instance_key(self._namespace),
       ref_status_enum_guid=self._status[outcome],
       ref_disposition_enum_guid=claimed.ref_disposition_enum_guid,
       pub_name=claimed.pub_name,
@@ -259,7 +254,6 @@ class WorkflowManagementModule(BaseModule):
         await provider.disconnect()
     self._definitions_provider = None
     self._task_provider = None
-    self._host = None
     self._definitions.clear()
     self._batch.clear()
     self._database = None
