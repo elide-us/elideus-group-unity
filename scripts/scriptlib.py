@@ -727,7 +727,10 @@ async def _populate_procedures(conn) -> int:
 # Reflects server/kernel and server/core by AST (no import) into the
 # contracts_modules_* cluster: every class that descends from BaseModule,
 # BaseProvider or BaseWorker, the abstract bases and the composed providers
-# (*Provider classes that stand alone) included. Rules:
+# (*Provider classes that stand alone) included, plus the kernel SERVICES:
+# the classes of server/*_manager.py (LifecycleManager, ModuleManager), which
+# exist before and around the modules, are listed with role SERVICE and
+# never loaded as modules. Rules:
 #   - A function is recorded ONCE, on the class that declares it. A subclass
 #     method of the same name is an implementation of that contract, not a
 #     new row; its signature must match or populate fails loud.
@@ -748,7 +751,7 @@ async def _populate_procedures(conn) -> int:
 # =============================================================================
 
 _PY_TO_TYPE = {'str': 'STRING', 'int': 'INT32', 'bool': 'BOOL', 'float': 'FLOAT64', 'bytes': 'BINARY'}
-_UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'BaseDatabaseTransactionProvider'}
+_UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'type', 'BaseModule', 'BaseDatabaseTransactionProvider'}
 _COLLECTION_NAMES = {'list', 'set', 'Iterable'}
 _RECORD_MODELS = {'DBRequest': 'db_request'}   # + every Pydantic BaseModel class, registered at reflection
 _RECORD_MODEL_BASE = 'BaseModel'
@@ -801,7 +804,7 @@ def _parse_annotation(node) -> _Slot | None:
         raise ValueError('nested collection: %s' % ast.unparse(node))
       inner.collection = True
       return inner
-    if node.value.id in ('dict', 'type', 'Type'):
+    if node.value.id in ('dict', 'Dict', 'type', 'Type'):
       return _Slot('type', 'JSON_DOC', note=ast.unparse(node))
   raise ValueError('unmapped annotation %s' % ast.unparse(node))
 
@@ -868,9 +871,12 @@ class _ModuleGraph:
 
 def _module_role(graph: _ModuleGraph, name: str) -> str | None:
   """MEP slot: Operations / Maintenance / Interface -> MANAGER; Execution /
-  Management -> EXECUTOR; providers -> PROVIDER; workers -> WORKER. The
-  standalone modules (configuration, enum, environment, logging) are
-  managers. BaseModule itself is the base of every slot and has none."""
+  Management -> EXECUTOR; providers -> PROVIDER; workers -> WORKER; the
+  classes of server/*_manager.py -> SERVICE. The standalone modules
+  (configuration, enum, environment, logging) are managers. BaseModule
+  itself is the base of every slot and has none."""
+  if _is_service(graph, name):
+    return 'SERVICE'
   root = graph.root(name)
   if root == 'BaseProvider' or (root is None and name.endswith('Provider')):
     return 'PROVIDER'
@@ -883,9 +889,18 @@ def _module_role(graph: _ModuleGraph, name: str) -> str | None:
   return 'MANAGER'
 
 
+def _is_service(graph: _ModuleGraph, name: str) -> bool:
+  """A kernel service: a class of a server/*_manager.py file."""
+  return graph.classes[name]['path'].endswith('_manager.py')
+
+
 def _collect_classes(graph: _ModuleGraph, root: str, pkg: str, owner: str) -> None:
   folder = os.path.join(root, 'server', pkg)
   files = [os.path.join(folder, '__init__.py')]
+  if pkg == 'kernel':
+    # The kernel services live beside the packages, at the server root.
+    server = os.path.join(root, 'server')
+    files += [os.path.join(server, f) for f in sorted(os.listdir(server)) if f.endswith('_manager.py')]
   files += [os.path.join(folder, f) for f in sorted(os.listdir(folder)) if f.endswith('_module.py')]
   for sub in sorted(os.listdir(folder)):
     subdir = os.path.join(folder, sub)
@@ -969,9 +984,10 @@ def _reflect_modules(root: str) -> _ModuleGraph:
   _collect_classes(graph, root, 'kernel', KERNEL_GUID)
   _collect_classes(graph, root, 'core', CORE_GUID)
   _register_record_models(graph)
-  # keep only the module family: the three roots and everything under them
+  # keep only the module family: the three roots and everything under them,
+  # plus the kernel services
   for name in list(graph.order):
-    if graph.root(name) is None and not name.endswith('Provider'):   # composed providers stand alone
+    if graph.root(name) is None and not name.endswith('Provider') and not _is_service(graph, name):   # composed providers stand alone
       del graph.classes[name]
       graph.order.remove(name)
   declared: dict[str, dict[str, tuple]] = {}   # class -> {function: (input, output)}

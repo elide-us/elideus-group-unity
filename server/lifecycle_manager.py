@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__.split('.')[-1])
 MODULES_READ_ALL = "db:contracts:modules:read_all:1"
 MANIFEST_ROWS = "db:contracts:db:list_manifest_rows:1"
 # The module_role members that are module files; providers and workers are
-# loaded by their executors.
+# loaded by their executors, SERVICE rows (the two kernel services) are
+# never loaded.
 LOADABLE_ROLES = ("MANAGER", "EXECUTOR")
 
 R = TypeVar("R", bound=BaseModel)
@@ -49,7 +50,8 @@ R = TypeVar("R", bound=BaseModel)
 #                                 concurrent startup(). Ordering emerges from
 #                                 await_ready() waits inside the modules.
 #     2. _check_listing()         The listing is the gate (Aaron 2026-10-21):
-#                                 every loaded module must have its
+#                                 every loaded module and both kernel
+#                                 services must have their
 #                                 contracts_modules row, every loadable row
 #                                 in a sealed manifest package must be a
 #                                 loaded module. A failure is a CRITICAL
@@ -157,6 +159,11 @@ class LifecycleManager:
     for module_class in loaded:
       if module_class.__name__ not in listed_names:
         self._refuse("module %s is not listed in contracts_modules" % module_class.__name__)
+    # The two kernel services are listed (role SERVICE) and never loaded; the
+    # listing is the gate for them as it is for the modules.
+    for service in (type(self), type(self.modules)):
+      if service.__name__ not in listed_names:
+        self._refuse("service %s is not listed in contracts_modules" % service.__name__)
 
     namespace = uuid.UUID(self.modules.get(EnvironmentVariablesModule).get("NS_HASH"))
     roles = {deterministic_guid(namespace, "contracts_primitives_enums", "module_role.%s" % role) for role in LOADABLE_ROLES}
