@@ -20,12 +20,17 @@ class DBRequest:
 # ----------------------------------------------------------------------------
 # Named-operation dispatch over the execution layer.
 #
-# Callers submit a `DBRequest(op, params)` — `op` is a short human-readable
-# name registered in `service_database_operations`; `params` is a dict whose
+# Callers submit a `DBRequest(op, params)` — `op` is the operation's URN,
+# db:<domain>:<subdomain>:<function>:<version>; `params` is a dict whose
 # values are bound positionally to the resolved SQL. The module looks the
 # op name up in an in-memory cache and dispatches the cached SQL through
-# `DatabaseExecutionModule`. On cache miss the row is lazy-loaded by
-# natural-key seek against the UQ_sdo_op unique constraint.
+# `DatabaseExecutionModule`. On cache miss the row is lazy-loaded by seeking
+# the URN registry by the five segments: namespace, domain and subdomain are
+# vocabulary rows (etg.contracts_urn_namespaces, _domains, _subdomains, each
+# unique on name) and the function row (etg.contracts_urn_functions) composes
+# them with its own name and version; the operation row
+# (etg.contracts_db_operations) hangs off the function row by
+# ref_function_guid. The string is composed from the rows, never stored.
 #
 # The SQL text itself is chosen per active provider — the startup match on
 # SQL_PROVIDER fixes `_query_column` to one of `pub_query_mssql`,
@@ -59,8 +64,8 @@ class DBRequest:
 #     participant Cache as registry cache
 #     participant Exec as DatabaseExecutionModule
 #
-#     Caller->>Ops: query(DBRequest("user_by_guid", {"guid": g}))
-#     Ops->>Cache: lookup by pub_op
+#     Caller->>Ops: query(DBRequest("db:security:roles:read_all:1"))
+#     Ops->>Cache: lookup by URN
 #     alt cache hit
 #       Cache-->>Ops: {query: "..."}
 #     else cache miss
@@ -101,9 +106,13 @@ class DatabaseOperationsModule(BaseModule):
 
     bootstrap_sql = f"""
       SELECT
-        [cdo].[pub_op],
+        CONCAT([cun].[pub_name], N':', [cud].[pub_name], N':', [cus].[pub_name], N':', [cuf].[pub_name], N':', [cuf].[pub_version]) AS [pub_urn],
         [cdo].[{self._query_column}]
       FROM [etg].[contracts_db_operations] AS [cdo]
+      JOIN [etg].[contracts_urn_functions] AS [cuf] ON [cuf].[key_guid] = [cdo].[ref_function_guid]
+      JOIN [etg].[contracts_urn_namespaces] AS [cun] ON [cun].[key_guid] = [cuf].[ref_namespace_guid]
+      JOIN [etg].[contracts_urn_domains] AS [cud] ON [cud].[key_guid] = [cuf].[ref_domain_guid]
+      JOIN [etg].[contracts_urn_subdomains] AS [cus] ON [cus].[key_guid] = [cuf].[ref_subdomain_guid]
       WHERE [cdo].[pub_bootstrap_element] = 1
         AND [cdo].[{self._query_column}] IS NOT NULL
       FOR JSON PATH;
@@ -116,7 +125,7 @@ class DatabaseOperationsModule(BaseModule):
 
     ops = raw if isinstance(raw, list) else [raw]
     for entry in ops:
-      self._registry[entry["pub_op"]] = entry[self._query_column]
+      self._registry[entry["pub_urn"]] = entry[self._query_column]
 
     logger.info("Loaded %d operations", len(self._registry))
     self.raise_ready()
@@ -131,15 +140,29 @@ class DatabaseOperationsModule(BaseModule):
     self._registry.clear()
 
   async def _load_op(self, op: str) -> str | None:
+    # The URN's five segments seek the registry; a segment with no row makes the op unknown.
+    segments = op.split(":")
+    if len(segments) != 5 or not segments[4].isdigit():
+      logger.error("Op '%s' is not a <namespace>:<domain>:<subdomain>:<function>:<version> URN", op)
+      return None
+    namespace, domain, subdomain, function, version = segments
     sql = f"""
       SELECT
         [cdo].[{self._query_column}]
       FROM [etg].[contracts_db_operations] AS [cdo]
-      WHERE [cdo].[pub_op] = ?
+      JOIN [etg].[contracts_urn_functions] AS [cuf] ON [cuf].[key_guid] = [cdo].[ref_function_guid]
+      JOIN [etg].[contracts_urn_namespaces] AS [cun] ON [cun].[key_guid] = [cuf].[ref_namespace_guid]
+      JOIN [etg].[contracts_urn_domains] AS [cud] ON [cud].[key_guid] = [cuf].[ref_domain_guid]
+      JOIN [etg].[contracts_urn_subdomains] AS [cus] ON [cus].[key_guid] = [cuf].[ref_subdomain_guid]
+      WHERE [cun].[pub_name] = ?
+        AND [cud].[pub_name] = ?
+        AND [cus].[pub_name] = ?
+        AND [cuf].[pub_name] = ?
+        AND [cuf].[pub_version] = ?
         AND [cdo].[{self._query_column}] IS NOT NULL
       FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
     """
-    raw = await self._db.query(sql, (op,))
+    raw = await self._db.query(sql, (namespace, domain, subdomain, function, int(version)))
     if raw is None:
       logger.error("Unable to load op '%s'", op)
       return None

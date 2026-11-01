@@ -226,7 +226,58 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 # (pub_exclude_element, pub_delete_disposition) are derived, not authored:
 # every populate run recomputes them from the live catalog. pub_seed_element
 # is authored (the installer's seed set) and never written here.
+#
+# Ordinals. Three declaration tables are unique on (parent, pub_ordinal):
+# contracts_db_columns, contracts_db_constraint_columns and
+# contracts_modules_models_fields. A rebuild that reorders a table's columns
+# moves rows across ordinals, which the row-by-row MERGE cannot absorb: the
+# live row arriving at ordinal N collides with the stale row still holding N.
+# So each of those passes first PARKS every positive ordinal (negated; the
+# catalogue's ordinals are all positive, so nothing collides), merges, and
+# then fails loud naming every row still parked: that row is a column the
+# migration dropped and did not declare. populate never deletes; the
+# migration declares. Already-parked rows are left alone (WHERE > 0), so a
+# re-run after a failure reports the same rows.
 # =============================================================================
+
+# The parked rows of each ordinal table, named through the parent, for the fail-loud report.
+_ORDINAL_TABLES = {
+  'contracts_db_columns': (
+    'SELECT t.pub_schema + \'.\' + t.pub_name + \'.\' + c.pub_name AS pub_name, -c.pub_ordinal AS pub_ordinal, c.key_guid '
+    'FROM %s c JOIN %s t ON c.ref_table_guid = t.key_guid '
+    'WHERE c.pub_ordinal < 0 ORDER BY 1 FOR JSON PATH'
+  ) % (_kt('contracts_db_columns'), _kt('contracts_db_tables')),
+  'contracts_db_constraint_columns': (
+    'SELECT k.pub_name + \'.\' + c.pub_name AS pub_name, -cc.pub_ordinal AS pub_ordinal, cc.key_guid '
+    'FROM %s cc JOIN %s k ON cc.ref_constraint_guid = k.key_guid JOIN %s c ON cc.ref_column_guid = c.key_guid '
+    'WHERE cc.pub_ordinal < 0 ORDER BY 1 FOR JSON PATH'
+  ) % (_kt('contracts_db_constraint_columns'), _kt('contracts_db_constraints'), _kt('contracts_db_columns')),
+  'contracts_modules_models_fields': (
+    'SELECT m.pub_name + \'.\' + f.pub_name AS pub_name, -f.pub_ordinal AS pub_ordinal, f.key_guid '
+    'FROM %s f JOIN %s m ON f.ref_model_guid = m.key_guid '
+    'WHERE f.pub_ordinal < 0 ORDER BY 1 FOR JSON PATH'
+  ) % (_kt('contracts_modules_models_fields'), _kt('contracts_modules_models')),
+}
+
+
+async def _park_ordinals(conn, table: str) -> None:
+  """Negate every positive pub_ordinal of a (parent, ordinal)-unique table so
+  the pass can place live rows at their catalogue ordinals without colliding
+  with stale ones. Rows already parked by an earlier failed run stay parked."""
+  if table not in _ORDINAL_TABLES:
+    raise ValueError('%s is not an ordinal-parked table' % table)
+  await _execute(conn, 'UPDATE %s SET [pub_ordinal] = -[pub_ordinal] WHERE [pub_ordinal] > 0' % _kt(table))
+
+
+async def _check_parked_ordinals(conn, table: str) -> None:
+  """Fail loud on every row the pass left parked: each is a dropped column,
+  constraint column or model field the migration did not declare."""
+  rows = await _query_json(conn, _ORDINAL_TABLES[table])
+  if rows:
+    lines = ['    %s (ordinal %d, key_guid %s)' % (r['pub_name'], r['pub_ordinal'], r['key_guid']) for r in rows]
+    raise RuntimeError(
+      '%s: %d row(s) the catalogue no longer has, left parked (negative ordinal); '
+      'the migration that dropped them must declare them:\n%s' % (table, len(rows), '\n'.join(lines)))
 
 async def _load_type_lookup(conn) -> tuple[dict[str, str], dict[str, str]]:
   """Reads contracts_primitives_types and returns two lookups:
@@ -396,6 +447,7 @@ async def _populate_columns(conn, table_guids: dict[str, str],
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
   guids: dict[str, str] = {}
+  await _park_ordinals(conn, 'contracts_db_columns')
   for r in rows:
     table_natural = '%s.%s' % (r['pub_schema'], r['pub_table'])
     table_guid = table_guids.get(table_natural)
@@ -431,6 +483,7 @@ async def _populate_columns(conn, table_guids: dict[str, str],
       'pub_exclude_element': int(_excluded_from_seed(r['pub_name'])),
     })
     guids[column_natural] = g
+  await _check_parked_ordinals(conn, 'contracts_db_columns')
   print('  columns: %d' % len(guids))
   return guids
 
@@ -619,6 +672,7 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
        FOR JSON PATH"""
   )
   count = 0
+  await _park_ordinals(conn, 'contracts_db_constraint_columns')
   for r in pk_uq_rows:
     constraint_natural = '%s.%s.%s' % (r['pub_schema'], r['pub_table'], r['pub_constraint'])
     column_natural = '%s.%s.%s' % (r['pub_schema'], r['pub_table'], r['pub_column'])
@@ -657,6 +711,7 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
       'pub_ordinal': r['pub_ordinal'],
     })
     count += 1
+  await _check_parked_ordinals(conn, 'contracts_db_constraint_columns')
   print('  constraint_columns: %d' % count)
   return count
 
@@ -1068,6 +1123,7 @@ async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
     })
   print('  module models: %d' % len(graph.models))
   count = 0
+  await _park_ordinals(conn, 'contracts_modules_models_fields')
   for name, m in graph.models.items():
     for ordinal, f in enumerate(m['fields'], 1):
       await _merge(conn, 'contracts_modules_models_fields', 'key_guid', {
@@ -1084,6 +1140,7 @@ async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
         'pub_max_length': None,
       })
       count += 1
+  await _check_parked_ordinals(conn, 'contracts_modules_models_fields')
   print('  module model fields: %d' % count)
   for f in graph.functions:
     await _merge(conn, 'contracts_modules_functions', 'key_guid', {
