@@ -5,7 +5,7 @@ from . import BaseWorkflowTaskWorker
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class WorkflowTaskWorker(BaseWorkflowTaskWorker):
+class AsyncTransactionWorker(BaseWorkflowTaskWorker):
   def __init__(self, executor, poll_seconds: int):
     # Seconds the loop sleeps when it finds the queue empty (the
     # workflow_poll_seconds configuration row). A backlog runs at full speed:

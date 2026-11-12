@@ -9,11 +9,11 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from server.kernel import BaseModule
-from server.kernel.database_operations_module import DatabaseOperationsModule
+from server.kernel.database_operations_module import DatabaseOperationsModule, DBRequest
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
 from server.kernel.kernel_configuration_module import KernelConfigurationModule
 from server.helpers import discover_classes, deterministic_guid, instance_key
-from .workflow_execution_providers import BaseWorkflowManagementProvider, BaseWorkflowTaskProvider, BaseWorkflowTaskWorker, WorkflowHistoryRecord, WorkflowQueueClaim
+from .workflow_execution_providers import BaseWorkflowTaskProvider, BaseWorkflowTaskWorker, WorkflowHistoryRecord, WorkflowQueueClaim
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -39,9 +39,9 @@ class WorkflowSteps(BaseModel):
 
 
 # ----------------------------------------------------------------------------
-# WorkflowManagementModule
+# WorkflowExecutionModule
 # ----------------------------------------------------------------------------
-# Executor (Management) for the Workflow subsystem: holds the definitions
+# Executor (Execution) for the Workflow subsystem: holds the definitions
 # catalogue (service_workflow_definitions) in memory, owns the queue provider
 # and the worker that claims and dispatches instances, draws batch numbers
 # from the workflow_batch sequence, and sweeps stale claims when the
@@ -79,9 +79,11 @@ class WorkflowSteps(BaseModel):
 #   workflow_execution_providers/*_provider, *_worker
 # ----------------------------------------------------------------------------
 
-DEFINITIONS_PROVIDER = "workflow_management_provider"
-TASK_PROVIDER = "workflow_task_provider"
-WORKER = "workflow_task_worker"
+# The definitions catalogue (service_workflow_definitions) is an internal accounting read: one registry operation
+# dispatched by name through the Database Manager at startup (Aaron 2026-11-02: the ME layer, not a provider).
+DEFINITIONS_READ_ALL = "db:workflow:definitions:read_all:1"
+TASK_PROVIDER = "async_transaction_provider"
+WORKER = "async_transaction_worker"
 BATCH_SEQUENCE = "workflow_batch"
 STATUSES = ("PENDING", "RUNNING", "COMPLETE", "FAILED", "CANCELLING")
 DISPOSITIONS = ("REVERSIBLE", "IRREVERSIBLE", "TRANSIENT", "CANCELLABLE")
@@ -91,11 +93,10 @@ GRACE_KEY = "stale_grace_seconds"
 POLL_KEY = "workflow_poll_seconds"
 
 
-class WorkflowManagementModule(BaseModule):
+class WorkflowExecutionModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
     self._database: DatabaseOperationsModule | None = None
-    self._definitions_provider: BaseWorkflowManagementProvider | None = None
     self._task_provider: BaseWorkflowTaskProvider | None = None
     self._worker: BaseWorkflowTaskWorker | None = None
     self._namespace: uuid.UUID | None = None
@@ -124,9 +125,7 @@ class WorkflowManagementModule(BaseModule):
     self._module_guid = deterministic_guid(self._namespace, "contracts_modules", self.__class__.__name__)
     providers = discover_classes(f"{__package__}.workflow_execution_providers", "_provider")
     workers = discover_classes(f"{__package__}.workflow_execution_providers", "_worker")
-    self._definitions_provider = providers[DEFINITIONS_PROVIDER](self._database)
     self._task_provider = providers[TASK_PROVIDER](self._database)
-    await self._definitions_provider.connect()
     await self._task_provider.connect()
     await self._reload()
     self._worker = workers[WORKER](self, self._poll)
@@ -134,7 +133,9 @@ class WorkflowManagementModule(BaseModule):
     self.raise_ready()
 
   async def _reload(self):
-    self._definitions = {row["pub_name"]: row for row in await self._definitions_provider.read_all()}
+    raw = await self._database.query(DBRequest(DEFINITIONS_READ_ALL))
+    rows = [] if raw is None else raw if isinstance(raw, list) else [raw]
+    self._definitions = {row["pub_name"]: row for row in rows}
     if self._definitions:
       logger.info("Loaded %d workflow definitions", len(self._definitions))
     else:
@@ -249,10 +250,8 @@ class WorkflowManagementModule(BaseModule):
 
   async def shutdown(self):
     self._worker = None
-    for provider in (self._definitions_provider, self._task_provider):
-      if provider:
-        await provider.disconnect()
-    self._definitions_provider = None
+    if self._task_provider:
+      await self._task_provider.disconnect()
     self._task_provider = None
     self._definitions.clear()
     self._batch.clear()

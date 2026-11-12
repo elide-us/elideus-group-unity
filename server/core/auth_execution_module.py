@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # STUB — contract to be defined with the DAG tables; no behaviour yet.
 #
 # -- Dependencies ------------------------------------------------------------
-#   GatewayInterfaceModule (database access via the gateway)
+#   GatewayOperationsModule (database access via the gateway)
 #   auth_execution_providers/*_identity_provider
 # ----------------------------------------------------------------------------
 

@@ -1,13 +1,3 @@
--- Truncate data from reflection tables
-DELETE FROM etg.contracts_db_constraint_columns;
-DELETE FROM etg.contracts_db_constraints;
-DELETE FROM etg.contracts_db_index_columns;
-DELETE FROM etg.contracts_db_indexes;
-DELETE FROM etg.contracts_db_columns;
-DELETE FROM etg.contracts_db_tables;
-DELETE FROM etg.contracts_db_procedures;
-GO
-
 -- Drop all foreign keys
 DECLARE @sql NVARCHAR(MAX) = N'';
 SELECT @sql += 'ALTER TABLE [' + s.name + '].[' + t.name + '] DROP CONSTRAINT [' + fk.name + '];' + CHAR(13)

@@ -18,7 +18,7 @@ SEQUENCE_NEXT = "db:system:sequence:next:1"
 RECORD_HISTORY = "db:workflow:history:record:1"
 
 
-class WorkflowTaskProvider(BaseWorkflowTaskProvider):
+class AsyncTransactionProvider(BaseWorkflowTaskProvider):
   async def connect(self):
     pass
 

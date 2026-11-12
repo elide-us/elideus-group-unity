@@ -4,14 +4,14 @@ import uuid
 from fastapi import FastAPI
 
 from server.kernel import BaseModule
-from .workflow_management_module import WorkflowManagementModule, WorkflowSteps
+from .workflow_execution_module import WorkflowExecutionModule, WorkflowSteps
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 # ----------------------------------------------------------------------------
-# WorkflowMaintenanceModule
+# WorkflowOperationsModule
 # ----------------------------------------------------------------------------
-# Manager (Maintenance) for the Workflow subsystem: the declaration surface.
+# Manager (Operations) for the Workflow subsystem: the declaration surface.
 # A definition is declared by name; the manager validates its step document
 # against the contract (shape, then every callee resolves to a loaded module
 # function), copies the definition onto a new queue row with a batch number,
@@ -27,16 +27,16 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   status(key_guid) -> dict | None
 #
 # -- Dependencies ------------------------------------------------------------
-#   WorkflowManagementModule
+#   WorkflowExecutionModule
 # ----------------------------------------------------------------------------
 
-class WorkflowMaintenanceModule(BaseModule):
+class WorkflowOperationsModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
-    self._execution: WorkflowManagementModule | None = None
+    self._execution: WorkflowExecutionModule | None = None
 
   async def startup(self):
-    self._execution = self.get_module(WorkflowManagementModule)
+    self._execution = self.get_module(WorkflowExecutionModule)
     await self._execution.await_ready()
     self.raise_ready()
 
