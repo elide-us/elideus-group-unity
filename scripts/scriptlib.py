@@ -1,11 +1,11 @@
 from __future__ import annotations
-import os, sys, json, gzip, uuid, re, ast
+import os, sys, json, gzip, uuid, re, ast, shutil
 from datetime import datetime, timezone
 
 # The kernel carries the database schema version; the installer stamps it.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from server.kernel import DATABASE_VERSION
-from server.helpers import pascal_to_snake
+from server.helpers import pascal_to_snake, snake_to_pascal
 
 import dotenv
 
@@ -226,7 +226,62 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 # (pub_exclude_element, pub_delete_disposition) are derived, not authored:
 # every populate run recomputes them from the live catalog. pub_seed_element
 # is authored (the installer's seed set) and never written here.
+#
+# Ordinals. Three declaration tables are unique on (parent, pub_ordinal):
+# contracts_db_columns, contracts_db_constraint_columns and
+# contracts_modules_models_fields. A rebuild that reorders a table's columns
+# moves rows across ordinals, which the row-by-row MERGE cannot absorb: the
+# live row arriving at ordinal N collides with the stale row still holding N.
+# So each of those passes first PARKS every positive ordinal (negated; the
+# catalogue's ordinals are all positive, so nothing collides), merges, and
+# then fails loud naming every row still parked: that row is a column the
+# migration dropped and did not declare. populate never deletes; the
+# migration declares. Already-parked rows are left alone (WHERE > 0), so a
+# re-run after a failure reports the same rows.
+# contracts_db_columns.pub_ordinal is a DECLARATION (Aaron 2026-11-02): the
+# query ordering, never sys.columns.column_id. The columns pass keeps a
+# declared ordinal, takes column_id only on a table with no declarations,
+# and refuses a physical column with no row on a declared table.
 # =============================================================================
+
+# The parked rows of each ordinal table, named through the parent, for the fail-loud report.
+_ORDINAL_TABLES = {
+  'contracts_db_columns': (
+    'SELECT t.pub_schema + \'.\' + t.pub_name + \'.\' + c.pub_name AS pub_name, -c.pub_ordinal AS pub_ordinal, c.key_guid '
+    'FROM %s c JOIN %s t ON c.ref_table_guid = t.key_guid '
+    'WHERE c.pub_ordinal < 0 ORDER BY 1 FOR JSON PATH'
+  ) % (_kt('contracts_db_columns'), _kt('contracts_db_tables')),
+  'contracts_db_constraint_columns': (
+    'SELECT k.pub_name + \'.\' + c.pub_name AS pub_name, -cc.pub_ordinal AS pub_ordinal, cc.key_guid '
+    'FROM %s cc JOIN %s k ON cc.ref_constraint_guid = k.key_guid JOIN %s c ON cc.ref_column_guid = c.key_guid '
+    'WHERE cc.pub_ordinal < 0 ORDER BY 1 FOR JSON PATH'
+  ) % (_kt('contracts_db_constraint_columns'), _kt('contracts_db_constraints'), _kt('contracts_db_columns')),
+  'contracts_modules_models_fields': (
+    'SELECT m.pub_name + \'.\' + f.pub_name AS pub_name, -f.pub_ordinal AS pub_ordinal, f.key_guid '
+    'FROM %s f JOIN %s m ON f.ref_model_guid = m.key_guid '
+    'WHERE f.pub_ordinal < 0 ORDER BY 1 FOR JSON PATH'
+  ) % (_kt('contracts_modules_models_fields'), _kt('contracts_modules_models')),
+}
+
+
+async def _park_ordinals(conn, table: str) -> None:
+  """Negate every positive pub_ordinal of a (parent, ordinal)-unique table so
+  the pass can place live rows at their catalogue ordinals without colliding
+  with stale ones. Rows already parked by an earlier failed run stay parked."""
+  if table not in _ORDINAL_TABLES:
+    raise ValueError('%s is not an ordinal-parked table' % table)
+  await _execute(conn, 'UPDATE %s SET [pub_ordinal] = -[pub_ordinal] WHERE [pub_ordinal] > 0' % _kt(table))
+
+
+async def _check_parked_ordinals(conn, table: str) -> None:
+  """Fail loud on every row the pass left parked: each is a dropped column,
+  constraint column or model field the migration did not declare."""
+  rows = await _query_json(conn, _ORDINAL_TABLES[table])
+  if rows:
+    lines = ['    %s (ordinal %d, key_guid %s)' % (r['pub_name'], r['pub_ordinal'], r['key_guid']) for r in rows]
+    raise RuntimeError(
+      '%s: %d row(s) the catalogue no longer has, left parked (negative ordinal); '
+      'the migration that dropped them must declare them:\n%s' % (table, len(rows), '\n'.join(lines)))
 
 async def _load_type_lookup(conn) -> tuple[dict[str, str], dict[str, str]]:
   """Reads contracts_primitives_types and returns two lookups:
@@ -396,11 +451,31 @@ async def _populate_columns(conn, table_guids: dict[str, str],
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
   )
   guids: dict[str, str] = {}
+  # The ordinal is DECLARED (Aaron 2026-11-02: the query ordering, never the
+  # current layout). A column row that exists keeps its pub_ordinal; the
+  # catalog's column_id is taken only on a table with no declarations at all
+  # (a fresh database after the installer, where physical = declared by
+  # construction). A physical column with no row on a declared table is a
+  # missing declaration: refused by name, the migration must declare it.
+  declared_rows = await _query_json(
+    conn, 'SELECT [key_guid], [ref_table_guid], [pub_ordinal] FROM %s FOR JSON PATH' % _kt('contracts_db_columns'))
+  declared = {d['key_guid'].upper(): abs(d['pub_ordinal']) for d in declared_rows}
+  declared_tables = {d['ref_table_guid'].upper() for d in declared_rows}
+  undeclared: list[str] = []
+  await _park_ordinals(conn, 'contracts_db_columns')
   for r in rows:
     table_natural = '%s.%s' % (r['pub_schema'], r['pub_table'])
     table_guid = table_guids.get(table_natural)
     if not table_guid:
       continue
+    column_guid = _guid('contracts_db_columns', '%s.%s' % (table_natural, r['pub_name']))
+    if column_guid in declared:
+      ordinal = declared[column_guid]
+    elif table_guid.upper() in declared_tables:
+      undeclared.append('%s.%s (physical column_id %d)' % (table_natural, r['pub_name'], r['pub_ordinal']))
+      continue
+    else:
+      ordinal = r['pub_ordinal']
     type_name = _resolve_type_name(
       base_to_name, r['sys_type'], r['sys_max_length'], r['sys_precision'], r['sys_scale'], bool(r['sys_is_identity'])
     )
@@ -424,13 +499,19 @@ async def _populate_columns(conn, table_guids: dict[str, str],
       'ref_type_guid': type_guid,
       'ref_package_guid': KERNEL_GUID,
       'pub_name': r['pub_name'],
-      'pub_ordinal': r['pub_ordinal'],
+      'pub_ordinal': ordinal,
       'pub_is_nullable': int(bool(r['pub_is_nullable'])),
       'pub_default_value': default_value,
       'pub_max_length': max_length,
       'pub_exclude_element': int(_excluded_from_seed(r['pub_name'])),
     })
     guids[column_natural] = g
+  if undeclared:
+    raise RuntimeError(
+      'contracts_db_columns: %d physical column(s) have no declaration on a declared table; '
+      'the migration that added them must declare their ordinal:\n%s'
+      % (len(undeclared), '\n'.join('    ' + u for u in undeclared)))
+  await _check_parked_ordinals(conn, 'contracts_db_columns')
   print('  columns: %d' % len(guids))
   return guids
 
@@ -619,6 +700,7 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
        FOR JSON PATH"""
   )
   count = 0
+  await _park_ordinals(conn, 'contracts_db_constraint_columns')
   for r in pk_uq_rows:
     constraint_natural = '%s.%s.%s' % (r['pub_schema'], r['pub_table'], r['pub_constraint'])
     column_natural = '%s.%s.%s' % (r['pub_schema'], r['pub_table'], r['pub_column'])
@@ -657,6 +739,7 @@ async def _populate_constraint_columns(conn, constraint_guids: dict[str, str], c
       'pub_ordinal': r['pub_ordinal'],
     })
     count += 1
+  await _check_parked_ordinals(conn, 'contracts_db_constraint_columns')
   print('  constraint_columns: %d' % count)
   return count
 
@@ -728,7 +811,8 @@ async def _populate_procedures(conn) -> int:
 # contracts_modules_* cluster: every class that descends from BaseModule,
 # BaseProvider or BaseWorker, the abstract bases and the composed providers
 # (*Provider classes that stand alone) included, plus the kernel SERVICES:
-# the classes of server/*_manager.py (LifecycleManager, ModuleManager), which
+# the files at the server root and main.py (LifecycleManager, ModuleManager,
+# Lifespan, Helpers, Main), which
 # exist before and around the modules, are listed with role SERVICE and
 # never loaded as modules. Rules:
 #   - A function is recorded ONCE, on the class that declares it. A subclass
@@ -750,8 +834,9 @@ async def _populate_procedures(conn) -> int:
 # Stale rows are not deleted, also like the schema passes.
 # =============================================================================
 
-_PY_TO_TYPE = {'str': 'STRING', 'int': 'INT32', 'bool': 'BOOL', 'float': 'FLOAT64', 'bytes': 'BINARY'}
-_UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'type', 'BaseModule', 'BaseDatabaseTransactionProvider'}
+_PY_TO_TYPE = {'str': 'STRING', 'int': 'INT32', 'bool': 'BOOL', 'float': 'FLOAT64', 'bytes': 'BINARY', 'UUID': 'UUID'}
+_UNTYPED_NAMES = {'dict', 'Any', 'tuple', 'IntEnum', 'T', 'type', 'BaseModule', 'BaseDatabaseTransactionProvider',
+                  'FastAPI', 'Request', 'JSONResponse', 'Exception'}   # live handles of the process root and lifespan: DEFECT placeholders
 _COLLECTION_NAMES = {'list', 'set', 'Iterable'}
 _RECORD_MODELS = {'DBRequest': 'db_request'}   # + every Pydantic BaseModel class, registered at reflection
 _RECORD_MODEL_BASE = 'BaseModel'
@@ -797,6 +882,8 @@ def _parse_annotation(node) -> _Slot | None:
         slot.nullable = True
         return slot
     raise ValueError('union without None: %s' % ast.unparse(node))
+  if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == 'uuid' and node.attr == 'UUID':
+    return _Slot('type', 'UUID')   # uuid.UUID is the registry's UUID primitive
   if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
     if node.value.id in _COLLECTION_NAMES:
       inner = _parse_annotation(node.slice)
@@ -826,6 +913,7 @@ class _ModuleGraph:
     self.by_shape: dict[tuple, str] = {}
     self.functions: list[dict] = []
     self.edges: set[tuple[str, str, str]] = set()   # (module, dependency, kind)
+    self.violations: list[str] = []
     self.add_model('void', KERNEL_GUID, [], 'The empty model: a function with no parameters takes it, a function that returns nothing returns it.')
     self.add_model('db_request', KERNEL_GUID, [
       _Field('op', _Slot('type', 'STRING')),
@@ -872,7 +960,7 @@ class _ModuleGraph:
 def _module_role(graph: _ModuleGraph, name: str) -> str | None:
   """MEP slot: Operations / Maintenance / Interface -> MANAGER; Execution /
   Management -> EXECUTOR; providers -> PROVIDER; workers -> WORKER; the
-  classes of server/*_manager.py -> SERVICE. The standalone modules
+  files at the server root and main.py -> SERVICE. The standalone modules
   (configuration, enum, environment, logging) are managers. BaseModule
   itself is the base of every slot and has none."""
   if _is_service(graph, name):
@@ -886,33 +974,117 @@ def _module_role(graph: _ModuleGraph, name: str) -> str | None:
     return None
   if name.endswith('ExecutionModule') or name.endswith('ManagementModule'):
     return 'EXECUTOR'
+  if _is_single_module_component(graph, name):
+    return 'PRIMITIVE'   # a single-module component: its own interface, no executor (Aaron 2026-11-03)
   return 'MANAGER'
 
 
+def _is_single_module_component(graph: _ModuleGraph, name: str) -> bool:
+  component = _component_of(graph, name)
+  return sum(1 for n in graph.order if _component_of(graph, n) == component) == 1
+
+
+# Component derivation (Aaron 2026-11-03: "there is no specific terminology mapping for a module name, but since this is
+# the only current implementation the rule is sufficient"). Components are hand-authored rows in contracts_components;
+# this rule only names which row a module belongs to, and populate refuses a module whose component has no row.
+#   server root, main.py, the root bases in server/kernel/__init__.py  -> Server (the tier beside the packages)
+#   <x>_(maintenance|management)_module.py                              -> <X>Maintenance  (the privileged composition)
+#   <x>_<role>_module.py with a sibling <x>_execution_module.py        -> <X>
+#   any other *_module.py (no executor)                                -> its own stem   (a single-module component)
+#   <x>_execution_providers/*                                          -> <X>, or <X>Maintenance when the class name carries Management
+def _component_of(graph: _ModuleGraph, name: str) -> str:
+  path = graph.classes[name]['path']
+  if path == 'main.py' or path.count('/') == 1 or path.endswith('/__init__.py') and path.count('/') == 2:
+    return 'Server'
+  parts = path.split('/')
+  if len(parts) == 3 and parts[2].endswith('_module.py'):
+    stem = parts[2][:-len('_module.py')]
+    tokens = stem.split('_')
+    if tokens[-1] in ('maintenance', 'management'):
+      return snake_to_pascal('_'.join(tokens[:-1])) + 'Maintenance'
+    first = '_'.join(tokens[:-1]) if len(tokens) > 1 and tokens[-1] in ('operations', 'execution', 'interface') else stem
+    sibling = '%s/%s/%s_execution_module.py' % (parts[0], parts[1], first)
+    if any(c['path'] == sibling for c in graph.classes.values()):
+      return snake_to_pascal(first)
+    return snake_to_pascal(stem)
+  if len(parts) >= 4 and parts[2].endswith('_execution_providers'):
+    x = snake_to_pascal(parts[2][:-len('_execution_providers')])
+    return x + 'Maintenance' if 'Management' in name else x
+  raise ValueError('%s: no component rule for %s' % (name, path))
+
+
+def _classify_edges(graph: _ModuleGraph) -> list[str]:
+  """Re-kind the reflected REQUIRES edges: an edge from a module of the privileged composition <X>Maintenance to a row of
+  the SAME role in <X> is EXTENDS (Aaron 2026-11-03: each composed module depends on its concrete pair). Returns the
+  edges that violate the matrix: a cross-component REQUIRES whose target is not a Manager (one way in)."""
+  violations = []
+  for (m, d, kind) in sorted(graph.edges):
+    if kind != 'REQUIRES':
+      continue
+    cm, cd = _component_of(graph, m), _component_of(graph, d)
+    rm, rd = _module_role(graph, m), _module_role(graph, d)
+    if cm == cd + 'Maintenance' and rm == rd:
+      # the privileged composition: a module of <X>Maintenance over its concrete pair of the same role in <X>
+      graph.edges.discard((m, d, kind)); graph.edges.add((m, d, 'EXTENDS'))
+    elif cm != cd and rd not in ('MANAGER', 'PRIMITIVE'):
+      violations.append('%s (%s, %s) -> %s (%s, %s)' % (m, cm, rm, d, cd, rd))
+  return violations
+
+
+def _component_edges(graph: _ModuleGraph) -> set[tuple[str, str, str]]:
+  """The component-level dependencies DERIVED from the module edges: (component, dependency, kind), REQUIRES or EXTENDS,
+  INHERITS excluded (a base class is a contract, not a dependency). The rows in contracts_components_dependencies are
+  hand-authored; populate reports any difference (the risk edge Aaron accepted 2026-11-03)."""
+  out = set()
+  for (m, d, kind) in graph.edges:
+    if kind == 'INHERITS':
+      continue
+    cm, cd = _component_of(graph, m), _component_of(graph, d)
+    if cm != cd:
+      out.add((cm, cd, kind))
+  return out
+
+
 def _is_service(graph: _ModuleGraph, name: str) -> bool:
-  """A kernel service: a class of a server/*_manager.py file."""
-  return graph.classes[name]['path'].endswith('_manager.py')
+  """A kernel service: a module at the server root (server/*.py) or the
+  process entry main.py; a file with no class is listed under the identity
+  its filename gives it (Aaron 2026-11-03: the C vs C++ distinction)."""
+  path = graph.classes[name]['path']
+  return path == 'main.py' or (path.startswith('server/') and path.count('/') == 1)
+
+
+def _is_root_file(root: str, path: str) -> bool:
+  rel = os.path.relpath(path, root).replace(os.sep, '/')
+  return rel == 'main.py' or (rel.startswith('server/') and rel.count('/') == 1)
 
 
 def _collect_classes(graph: _ModuleGraph, root: str, pkg: str, owner: str) -> None:
   folder = os.path.join(root, 'server', pkg)
   files = [os.path.join(folder, '__init__.py')]
   if pkg == 'kernel':
-    # The kernel services live beside the packages, at the server root.
+    # The kernel services live beside the packages, at the server root, and
+    # the process entry main.py beside server/. Every file counts, class or not.
     server = os.path.join(root, 'server')
-    files += [os.path.join(server, f) for f in sorted(os.listdir(server)) if f.endswith('_manager.py')]
+    files += [os.path.join(root, 'main.py')]
+    files += [os.path.join(server, f) for f in sorted(os.listdir(server)) if f.endswith('.py') and f != '__init__.py']
   files += [os.path.join(folder, f) for f in sorted(os.listdir(folder)) if f.endswith('_module.py')]
   for sub in sorted(os.listdir(folder)):
     subdir = os.path.join(folder, sub)
     if os.path.isdir(subdir) and sub.endswith('_providers'):
       files.append(os.path.join(subdir, '__init__.py'))
-      files += [os.path.join(subdir, f) for f in sorted(os.listdir(subdir)) if f.endswith('_provider.py') or f.endswith('_worker.py')]
+      # every file in a providers folder counts (a registry beside the channels is a module too), class or not
+      files += [os.path.join(subdir, f) for f in sorted(os.listdir(subdir)) if f.endswith('.py') and f != '__init__.py']
   for path in files:
     with open(path, encoding='utf-8') as fh:
       tree = ast.parse(fh.read())
-    for cls in tree.body:
-      if not isinstance(cls, ast.ClassDef):
-        continue
+    class_defs = [n for n in tree.body if isinstance(n, ast.ClassDef)]
+    if not class_defs and _is_root_file(root, path):
+      # A module file with no class takes its class identity from the filename;
+      # its module-level functions are its callable surface.
+      stem = os.path.splitext(os.path.basename(path))[0]
+      body = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+      class_defs = [ast.ClassDef(name=snake_to_pascal(stem), bases=[], keywords=[], body=body, decorator_list=[])]
+    for cls in class_defs:
       bases = [b.id for b in cls.bases if isinstance(b, ast.Name)]
       abstract = 'ABC' in bases or any(
         isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(isinstance(d, ast.Name) and d.id == 'abstractmethod' for d in fn.decorator_list)
@@ -1024,6 +1196,7 @@ def _reflect_modules(root: str) -> _ModuleGraph:
   for (m, d, _) in graph.edges:
     if d not in graph.classes:
       raise ValueError('%s depends on %s, which is not a reflected module' % (m, d))
+  graph.violations = _classify_edges(graph)
   return graph
 
 
@@ -1047,11 +1220,18 @@ async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
   kinds = await _enum_lookup(conn, 'module_dependency_kind')
   module_guids = {n: _guid('contracts_modules', n) for n in graph.order}
   model_guids = {n: _guid('contracts_modules_models', n) for n in graph.models}
+  # Components are hand-authored rows; a module whose component has no row is refused (whitelist).
+  component_rows = await _query_json(conn, 'SELECT [key_guid], [pub_name] FROM %s FOR JSON PATH' % _kt('contracts_components'))
+  component_guids = {r['pub_name']: r['key_guid'].upper() for r in component_rows}
+  missing = sorted({_component_of(graph, n) for n in graph.order} - set(component_guids))
+  if missing:
+    raise RuntimeError('contracts_components: no row for component(s) %s; the migration must declare them' % ', '.join(missing))
   for name in graph.order:
     info = graph.classes[name]
     role = _module_role(graph, name)
     await _merge(conn, 'contracts_modules', 'key_guid', {
       'key_guid': module_guids[name],
+      'ref_component_guid': component_guids[_component_of(graph, name)],
       'ref_role_enum_guid': roles[role] if role else None,
       'ref_package_guid': info['owner'],
       'pub_name': name,
@@ -1068,6 +1248,7 @@ async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
     })
   print('  module models: %d' % len(graph.models))
   count = 0
+  await _park_ordinals(conn, 'contracts_modules_models_fields')
   for name, m in graph.models.items():
     for ordinal, f in enumerate(m['fields'], 1):
       await _merge(conn, 'contracts_modules_models_fields', 'key_guid', {
@@ -1084,6 +1265,7 @@ async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
         'pub_max_length': None,
       })
       count += 1
+  await _check_parked_ordinals(conn, 'contracts_modules_models_fields')
   print('  module model fields: %d' % count)
   for f in graph.functions:
     await _merge(conn, 'contracts_modules_functions', 'key_guid', {
@@ -1106,6 +1288,22 @@ async def _populate_modules(conn, name_to_guid: dict[str, str]) -> None:
       'ref_package_guid': graph.classes[m]['owner'],
     })
   print('  module dependencies: %d' % len(graph.edges))
+  for v in graph.violations:
+    print('  DEFECT matrix: %s reaches a non-Manager of another component' % v)
+  # The risk edge (Aaron 2026-11-03): component-level dependency rows are hand-authored and restate the module edges;
+  # derive them here and report every difference, both ways. Nothing enforces agreement until the GUI writes both.
+  declared_rows = await _query_json(conn,
+    'SELECT c.[pub_name] AS [component], d.[pub_name] AS [dependency], k.[pub_name] AS [kind] FROM %s cd '
+    'JOIN %s c ON cd.[ref_component_guid] = c.[key_guid] JOIN %s d ON cd.[ref_dependency_guid] = d.[key_guid] '
+    'JOIN %s k ON cd.[ref_kind_enum_guid] = k.[key_guid] FOR JSON PATH'
+    % (_kt('contracts_components_dependencies'), _kt('contracts_components'), _kt('contracts_components'), _kt('contracts_primitives_enums')))
+  declared = {(r['component'], r['dependency'], r['kind']) for r in declared_rows}
+  derived = _component_edges(graph)
+  for e in sorted(derived - declared):
+    print('  DRIFT component edge derived from the modules but not declared: %s %s %s' % e)
+  for e in sorted(declared - derived):
+    print('  DRIFT component edge declared but no module edge supports it: %s %s %s' % e)
+  print('  component dependencies: %d declared, %d derived' % (len(declared), len(derived)))
 
 
 # =============================================================================
@@ -1396,6 +1594,13 @@ async def make_installer(conn, prefix: str = 'installer') -> str:
   missing = {KERNEL_GUID, CORE_GUID, SETUP_GUID} - {r['key_guid'].upper() for r in manifest_rows}
   if missing:
     raise ValueError('the %s seed lacks the kernel, core or setup row (%s); flag it with pub_seed_element and apply the manifest batch before generating' % (_mt(), ', '.join(sorted(missing))))
+  # The one deliberate exception to "seed rows are written as read" (Aaron
+  # 2026-11-12): sealing is the outcome of a validation, so the installer
+  # never vouches for code it has not seen run. The sealed flag of the
+  # generating database is not read; every manifest row is written unsealed,
+  # on purpose, and only an install's seal phase sets it.
+  for row in manifest_rows:
+    row['pub_is_sealed'] = 0
   schema = await _read_schema(conn)
 
   # Only the kernel-owned tables are in the installer; a package's tables
@@ -1895,6 +2100,26 @@ async def _materialize_tables(conn, schema: dict, missing: list[dict]) -> None:
       await cur.execute(ddl)
 
 
+_PROGRESS_WIDTH = 40
+
+
+def _draw_progress(done: int, total: int, table: str) -> None:
+  """Redraws one progress line in place: a 40-character bar, the percent, the
+  row count out of the rows in this phase, and the table being written. The
+  table name is clipped to the terminal width so the line never wraps.
+  Terminal only: a piped or logged run prints nothing here."""
+  if not sys.stdout.isatty():
+    return
+  filled = _PROGRESS_WIDTH * done // total
+  bar = '=' * filled
+  if filled < _PROGRESS_WIDTH:
+    bar += '>' + ' ' * (_PROGRESS_WIDTH - filled - 1)
+  head = '\r  [%s] %3d%% %*d/%d  ' % (bar, 100 * done // total, len(str(total)), done, total)
+  room = max(shutil.get_terminal_size().columns - len(head), 0)
+  sys.stdout.write(head + table[:room].ljust(room))
+  sys.stdout.flush()
+
+
 async def _merge_rows_phase(conn, rows: list, phase_name: str,
                             pkg_guid: str | None = None) -> dict[str, int]:
   """Generic MERGE-each-row helper used by both seed_schema and seed_data
@@ -1904,24 +2129,35 @@ async def _merge_rows_phase(conn, rows: list, phase_name: str,
   dict on success; raises on first error with row index and table name
   attached to the message."""
   counts: dict[str, int] = {}
-  for i, row in enumerate(rows):
-    if 'schema' not in row or 'table' not in row or 'data' not in row:
-      raise ValueError('%s row %d malformed: missing "schema", "table" or "data" key' % (phase_name, i))
-    schema = row['schema']
-    table = row['table']
-    target = '%s.%s' % (schema, table)
-    data = dict(row['data'])  # copy so injection doesn't mutate caller's dict
-    if 'key_guid' not in data:
-      raise ValueError('%s row %d (%s) missing key_guid' % (phase_name, i, target))
-    if pkg_guid and 'ref_package_guid' not in data:
-      if await _table_has_package_column(conn, schema, table):
-        data['ref_package_guid'] = pkg_guid
-    try:
-      await _merge(conn, table, 'key_guid', data, schema=schema)
-    except Exception as e:
-      raise RuntimeError('%s row %d (%s, key_guid=%s): %s' % (
-        phase_name, i, target, data.get('key_guid'), e)) from e
-    counts[target] = counts.get(target, 0) + 1
+  drawn = None
+  try:
+    for i, row in enumerate(rows):
+      if 'schema' not in row or 'table' not in row or 'data' not in row:
+        raise ValueError('%s row %d malformed: missing "schema", "table" or "data" key' % (phase_name, i))
+      schema = row['schema']
+      table = row['table']
+      target = '%s.%s' % (schema, table)
+      data = dict(row['data'])  # copy so injection doesn't mutate caller's dict
+      if 'key_guid' not in data:
+        raise ValueError('%s row %d (%s) missing key_guid' % (phase_name, i, target))
+      if pkg_guid and 'ref_package_guid' not in data:
+        if await _table_has_package_column(conn, schema, table):
+          data['ref_package_guid'] = pkg_guid
+      try:
+        await _merge(conn, table, 'key_guid', data, schema=schema)
+      except Exception as e:
+        raise RuntimeError('%s row %d (%s, key_guid=%s): %s' % (
+          phase_name, i, target, data.get('key_guid'), e)) from e
+      counts[target] = counts.get(target, 0) + 1
+      # Redraw only when the percent or the table changes, not on every row.
+      state = (100 * (i + 1) // len(rows), table)
+      if state != drawn:
+        _draw_progress(i + 1, len(rows), table)
+        drawn = state
+  finally:
+    # Leave the bar on its own line, finished or failed, before anything else prints.
+    if drawn is not None and sys.stdout.isatty():
+      sys.stdout.write('\n')
   return counts
 
 

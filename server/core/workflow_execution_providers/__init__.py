@@ -65,33 +65,6 @@ class WorkflowHistoryRecord(BaseModel):
 
 
 # ----------------------------------------------------------------------------
-# BaseWorkflowManagementProvider
-# ----------------------------------------------------------------------------
-# Provider contract for the workflow DEFINITIONS (service_workflow_definitions):
-# package data, read whole. One registry operation, a single statement.
-#
-#   read_all() -> list[dict]   rows {key_guid, ref_disposition_enum_guid, pub_name,
-#                              pub_steps, pub_can_retry, pub_max_attempts, pub_notes}
-# ----------------------------------------------------------------------------
-
-class BaseWorkflowManagementProvider(BaseProvider):
-  def __init__(self, database: DatabaseOperationsModule):
-    self._database = database
-
-  @abstractmethod
-  async def connect(self):
-    pass
-
-  @abstractmethod
-  async def disconnect(self):
-    pass
-
-  @abstractmethod
-  async def read_all(self) -> list[dict]:
-    pass
-
-
-# ----------------------------------------------------------------------------
 # BaseWorkflowTaskProvider
 # ----------------------------------------------------------------------------
 # Provider contract for the QUEUE (system_workflow_queue) and the batch
@@ -176,7 +149,7 @@ class BaseWorkflowTaskProvider(BaseProvider):
 # ----------------------------------------------------------------------------
 # BaseWorkflowTaskWorker
 # ----------------------------------------------------------------------------
-# The claim-and-dispatch loop, owned by the Management executor. Operational
+# The claim-and-dispatch loop, owned by the Execution module. Operational
 # work waits for the manager to seal; then it claims until the queue is
 # empty and sleeps on its cadence only when the queue is empty.
 # ----------------------------------------------------------------------------

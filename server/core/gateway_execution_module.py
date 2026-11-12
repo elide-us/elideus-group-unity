@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import uuid
 
 from fastapi import FastAPI
 
@@ -8,9 +7,11 @@ from server.kernel import BaseModule
 from server.kernel.database_operations_module import DatabaseOperationsModule
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
 from server.kernel.kernel_configuration_module import KernelConfigurationModule
-from server.helpers import discover_classes, deterministic_guid
-from .gateway_execution_providers import BaseDiscordGuildProvider, BaseGatewayProvider, BaseGatewayWorker, DiscordGuildRegistry, GuildSyncResult, IoRequest, IoResponse
-from .workflow_maintenance_module import WorkflowMaintenanceModule
+from server.helpers import discover_classes
+from .gateway_execution_providers import BaseGatewayProvider, BaseGatewayWorker, IoRequest, IoResponse
+from .workflow_operations_module import WorkflowOperationsModule
+from .discord_operations_module import DiscordOperationsModule
+from .discord_execution_module import GuildSyncResult
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -21,9 +22,9 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # every crossing of the application boundary passes through, in or out. Owns
 # the gateway providers (one <channel>_gateway_provider per external thing),
 # keyed by channel (the provider's stem: 'discord' for
-# discord_gateway_provider), the Discord outbound worker, and the Discord
-# guild registry provider (system_discord_guilds: the BaseDiscordGuildProvider
-# contract, implemented by DiscordGuildRegistry).
+# discord_gateway_provider) and the Discord outbound worker. The guild
+# registry (system_discord_guilds) is the Discord component's: the sync hands
+# the client's guild list to DiscordOperationsModule (Aaron 2026-11-03).
 # Security is not a provider and is not here.
 #
 # One channel is built: Discord. Every other provider is a stub; a dispatch to
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #
 # The guild registry is kept by a WORKFLOW, never by a direct call: the
 # discord_guild_sync definition's one step is
-# GatewayInterfaceModule.sync_guilds. The gateway declares an instance on
+# GatewayOperationsModule.sync_guilds. The gateway declares an instance on
 # seal, after Discord has connected, and again whenever the client joins or
 # leaves a guild (the provider's on_guild_join / on_guild_remove callbacks);
 # the workflow worker claims and runs it.
@@ -69,7 +70,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   EnvironmentVariablesModule (DISCORD_SECRET = the bot token; never logged,
 #   never a row. NS_HASH = the guild row keys and the core package key)
 #   KernelConfigurationModule (the discord_* configuration rows)
-#   WorkflowMaintenanceModule (declares discord_guild_sync)
+#   WorkflowOperationsModule (declares discord_guild_sync)
 #   gateway_execution_providers/*_gateway_provider, *_worker, and the guild
 #   registry provider in its __init__
 # ----------------------------------------------------------------------------
@@ -87,22 +88,19 @@ COMMAND_PREFIX_KEY = "discord_command_prefix"
 SEND_INTERVAL_KEY = "discord_send_interval_seconds"
 RATE_LIMIT_DELAY_KEY = "discord_rate_limit_delay_seconds"
 MAX_LENGTH_KEY = "discord_message_max_length"
-# The workflow definition that keeps system_discord_guilds (core package data).
+# The workflow definition that keeps the Discord guild registry in line with the client.
 GUILD_SYNC = "discord_guild_sync"
-GUILDS_TABLE = "system_discord_guilds"
 
 
 class GatewayExecutionModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
     self._database: DatabaseOperationsModule | None = None
-    self._workflow: WorkflowMaintenanceModule | None = None
+    self._workflow: WorkflowOperationsModule | None = None
     self._providers: dict[str, BaseGatewayProvider] = {}
     self._worker: BaseGatewayWorker | None = None
     self._queue: asyncio.Queue | None = None
-    self._guilds: BaseDiscordGuildProvider | None = None
-    self._namespace: uuid.UUID | None = None
-    self._core_guid: str | None = None
+    self._discord: DiscordOperationsModule | None = None
     self._system_channel_id: int = 0
     self._connected = False
     self._draining = False
@@ -114,13 +112,13 @@ class GatewayExecutionModule(BaseModule):
     await env.await_ready()
     configuration = self.get_module(KernelConfigurationModule)
     await configuration.await_ready()
-    self._workflow = self.get_module(WorkflowMaintenanceModule)
+    self._workflow = self.get_module(WorkflowOperationsModule)
     await self._workflow.await_ready()
+    self._discord = self.get_module(DiscordOperationsModule)
+    await self._discord.await_ready()
     token = env.get(SECRET)
     if not token:
       raise RuntimeError("%s is not set: the Discord gateway has no bot token" % SECRET)
-    self._namespace = uuid.UUID(env.get("NS_HASH"))
-    self._core_guid = deterministic_guid(self._namespace, "service_packages_manifest", "core")
     self._system_channel_id = int(configuration.get(SYSTEM_CHANNEL_KEY))
     providers = discover_classes(f"{__package__}.gateway_execution_providers", "_provider")
     workers = discover_classes(f"{__package__}.gateway_execution_providers", "_worker")
@@ -142,8 +140,6 @@ class GatewayExecutionModule(BaseModule):
         self._providers[channel].on_guild_remove = self._declare_guild_sync
       else:
         self._providers[channel] = provider()
-    self._guilds = DiscordGuildRegistry(self._database)
-    await self._guilds.connect()
     self._queue = asyncio.Queue()
     logger.info("Gateway channels: %s", ", ".join(sorted(self._providers)))
     self._worker = workers[WORKER](self, int(configuration.get(SEND_INTERVAL_KEY)))
@@ -173,20 +169,8 @@ class GatewayExecutionModule(BaseModule):
     return True
 
   async def sync_guilds(self) -> GuildSyncResult:
-    # The discord_guild_sync step: the registry follows what the client reports.
-    current = self._providers[DISCORD].guilds()
-    seen = set()
-    for guild in current:
-      key_guid = deterministic_guid(self._namespace, GUILDS_TABLE, str(guild.guild_id))
-      await self._guilds.upsert(guild, key_guid, self._core_guid)
-      seen.add(guild.guild_id)
-    left = 0
-    for row in await self._guilds.read_all():
-      if row.pub_left_on is None and row.pub_guild_id not in seen:
-        await self._guilds.mark_left(row.pub_guild_id)
-        left += 1
-    logger.info("Discord guild sync: %d guild(s) synced, %d marked left", len(current), left)
-    return GuildSyncResult(synced=len(current), left=left)
+    # The discord_guild_sync step: the Discord component's registry follows what the client reports.
+    return await self._discord.sync_guilds(self._providers[DISCORD].guilds())
 
   async def _declare_guild_sync(self) -> None:
     await self._workflow.declare(GUILD_SYNC)
@@ -224,11 +208,9 @@ class GatewayExecutionModule(BaseModule):
     await discord.disconnect()
 
   async def shutdown(self):
-    if self._guilds is not None:
-      await self._guilds.disconnect()
     self._worker = None
     self._queue = None
     self._providers.clear()
-    self._guilds = None
+    self._discord = None
     self._workflow = None
     self._database = None
