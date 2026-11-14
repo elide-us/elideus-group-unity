@@ -1,9 +1,9 @@
 import logging
 
-from typing import Any
+from typing import Any, Awaitable, Callable
 from fastapi import FastAPI
 
-from . import BaseModule
+from . import AccessDenied, BaseModule, SecurityContext
 from .environment_variables_module import EnvironmentVariablesModule
 from server.helpers import discover_classes
 from .database_execution_providers import BaseDatabaseTransactionProvider
@@ -26,12 +26,22 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # a `BaseDatabaseTransactionProvider` subclass, add a branch to the match in `startup()`.
 #
 # -- Contract ----------------------------------------------------------------
-#   query(sql, params)   -> parsed JSON (dict | list) | None
-#   execute(sql, params) -> rowcount (int)
+#   query(sql, params, context)   -> parsed JSON (dict | list) | None
+#   execute(sql, params, context) -> rowcount (int)
 #
 # `query` returns parsed JSON because every provider is required to run
 # SELECTs as `FOR JSON PATH` and return the parsed structure. `execute`
 # returns rowcount as a success code; this is not nullable.
+#
+# -- The execution gate ------------------------------------------------------
+# Every statement runs under a SecurityContext; its key_guid is handed to the
+# provider with the statement (nothing is sent to the database for it). A call
+# whose context is not a SecurityContext is refused: a denial row (ACCESS,
+# NO_CONTEXT, subject the refused method) is written FIRST, then AccessDenied
+# is raised. If the denial write fails it is logged and the refusal still
+# raises. The writer is on_refuse: its Manager, DatabaseOperationsModule, sets
+# it at startup (it resolves db:security:denials:create:1 and writes under the
+# kernel context). This module never reaches the layer above it.
 #
 # -- Dependencies ------------------------------------------------------------
 #   EnvironmentVariablesModule — reads SQL_PROVIDER and the DSN env var that
@@ -47,15 +57,15 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #     participant Prov as BaseDatabaseTransactionProvider
 #     participant Impl as MssqlTransactionProvider
 #
-#     Ops->>Exec: query(sql, params)
-#     Exec->>Prov: query(sql, params)
-#     Prov->>Impl: query(sql, params)
+#     Ops->>Exec: query(sql, params, context)
+#     Exec->>Prov: query(sql, params, context.key_guid)
+#     Prov->>Impl: query(sql, params, context_guid)
 #     Impl-->>Prov: parsed JSON
 #     Prov-->>Exec: parsed JSON
 #     Exec-->>Ops: parsed JSON
 #   ```
-# Bootstrap-phase modules directly access this module during startup for a 
-# pre-cache of filtered bootstrapping queries.
+# No other module issues statements through this one; DatabaseManagementModule
+# borrows the primary provider for the composed management provider.
 #
 # ----------------------------------------------------------------------------
 
@@ -63,6 +73,8 @@ class DatabaseExecutionModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
     self._provider: BaseDatabaseTransactionProvider | None = None
+    # The denial writer, set by the Manager at its startup: takes the subject.
+    self.on_refuse: Callable[[str], Awaitable[None]] | None = None
 
   async def on_seal(self):
     pass
@@ -118,18 +130,34 @@ class DatabaseExecutionModule(BaseModule):
       await self._provider.disconnect()
       self._provider = None
   
-  async def query(self, query: str, params: tuple | None = None) -> Any:
+  async def query(self, query: str, params: tuple | None, context: SecurityContext) -> Any:
+    if not isinstance(context, SecurityContext):
+      await self._refuse("DatabaseExecutionModule.query")
     if self._provider is None:
       logger.error("No active provider")
       return None
-    return await self._provider.query(query, params)
+    return await self._provider.query(query, params, context.key_guid)
 
-  async def execute(self, query: str, params: tuple | None = None) -> int:
+  async def execute(self, query: str, params: tuple | None, context: SecurityContext) -> int:
+    if not isinstance(context, SecurityContext):
+      await self._refuse("DatabaseExecutionModule.execute")
     if self._provider is None:
       logger.error("No active provider")
       return -1
-    return await self._provider.execute(query, params)
-  
+    return await self._provider.execute(query, params, context.key_guid)
+
+  async def _refuse(self, subject: str) -> None:
+    # Deny path: the denial row first, then the raise. A missing writer or a
+    # failed write is logged; the refusal raises regardless.
+    try:
+      if self.on_refuse is None:
+        raise RuntimeError("no denial writer: the Manager has not started")
+      await self.on_refuse(subject)
+    except Exception as e:
+      logger.error("Denial write failed (ACCESS NO_CONTEXT %s): %s", subject, e)
+    raise AccessDenied("ACCESS", "NO_CONTEXT", subject)
+
+
   def get_primary_provider(self) -> BaseDatabaseTransactionProvider | None:
     if self._provider is None:
       logger.error("No active provider")

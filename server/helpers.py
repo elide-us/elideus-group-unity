@@ -1,17 +1,19 @@
-import uuid, re, os, importlib, socket
+import uuid, re, os, importlib
 
 def deterministic_guid(deterministic_hash: uuid.UUID, entity_type: str, natural_key: str) -> str:
   return str(uuid.uuid5(deterministic_hash, f'{entity_type}:{natural_key}')).upper()
 
 # Use Case: the running process's place in the host registry, by formula from
 # kernel-owned facts: the HOST (pod or machine) by hostname, the INSTANCE (one
-# process on it) by hostname and pid. Any module derives them; nothing
+# process on it) by hostname and pid. The hostname is a parameter: every
+# caller passes EnvironmentVariablesModule.get_hostname(), the one reader of
+# the machine; the pid is read here. Any module derives them; nothing
 # generates, passes or references an identity.
-def host_key(deterministic_hash: uuid.UUID) -> str:
-  return deterministic_guid(deterministic_hash, 'service_hosts', socket.gethostname())
+def host_key(namespace: uuid.UUID, hostname: str) -> str:
+  return deterministic_guid(namespace, 'service_hosts', hostname)
 
-def instance_key(deterministic_hash: uuid.UUID) -> str:
-  return deterministic_guid(deterministic_hash, 'service_host_instances', '%s.%d' % (socket.gethostname(), os.getpid()))
+def instance_key(namespace: uuid.UUID, hostname: str) -> str:
+  return deterministic_guid(namespace, 'service_host_instances', '%s.%d' % (hostname, os.getpid()))
 
 # Use Case: module_name to ClassName
 def snake_to_pascal(name: str) -> str:

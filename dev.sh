@@ -3,6 +3,8 @@
 set -u
 # Go to script root
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
+# The entry point this process was launched by (contracts_entrypoints:dev.sh).
+export UNITY_ENTRYPOINT=dev.sh
 
 CMD="${1:-}"
 

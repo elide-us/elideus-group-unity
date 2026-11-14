@@ -2,6 +2,8 @@
 SETLOCAL ENABLEEXTENSIONS
 :: Go to script root
 CD /D %~dp0
+:: The entry point this process was launched by (contracts_entrypoints:dev.cmd).
+SET UNITY_ENTRYPOINT=dev.cmd
 IF "%1"=="" GOTO HELP
 SET CMD=%1
 IF /I "%CMD%"=="start" GOTO DO_START

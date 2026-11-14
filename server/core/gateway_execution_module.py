@@ -1,14 +1,17 @@
 import asyncio
 import logging
+import uuid
 
 from fastapi import FastAPI
 
-from server.kernel import BaseModule
+from server.kernel import BaseModule, SecurityContext, kernel_context
 from server.kernel.database_operations_module import DatabaseOperationsModule
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
 from server.kernel.kernel_configuration_module import KernelConfigurationModule
-from server.helpers import discover_classes
+from server.kernel.kernel_security_operations_module import KernelSecurityOperationsModule
+from server.helpers import deterministic_guid, discover_classes
 from .gateway_execution_providers import BaseGatewayProvider, BaseGatewayWorker, IoRequest, IoResponse
+from .rpc_operations_module import RpcOperationsModule
 from .workflow_operations_module import WorkflowOperationsModule
 from .discord_operations_module import DiscordOperationsModule
 from .discord_execution_module import GuildSyncResult
@@ -27,30 +30,44 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # the client's guild list to DiscordOperationsModule (Aaron 2026-11-03).
 # Security is not a provider and is not here.
 #
-# One channel is built: Discord. Every other provider is a stub; a dispatch to
-# a stub raises from the base handle(), a send to one raises here: never a
-# silent no-op.
+# Two channels are built: Discord (outbound, and the guild registry) and RPC
+# (inbound). Every other provider is a stub; a dispatch to a stub raises from
+# the base handle(), a send to one raises here: never a silent no-op.
+#
+# The RPC channel: on seal the gateway mints ONE anonymous session context
+# (KernelSecurityOperationsModule.mint: no parent, actor and principal the
+# anonymous account system_users:anonymous by formula, channel RPC, sealed).
+# It lives in memory: every anonymous request runs under it and nothing is
+# written for it unless a refusal is recorded under it.
+# The RPC provider is constructed with RpcOperationsModule.dispatch, a getter
+# for that session (None before seal and from unseal on) and the gateway's
+# denial writer; it refuses a request that presents a credential (IDENTITY,
+# NO_IDENTITY) and dispatches everything else under the session. The gateway
+# decides nothing else: every other gate is RPC's.
 #
 # The guild registry is kept by a WORKFLOW, never by a direct call: the
-# discord_guild_sync definition's one step is
-# GatewayOperationsModule.sync_guilds. The gateway declares an instance on
+# discord_guild_sync definition's one step is urn:system:discord:sync_guilds:1
+# (GatewayOperationsModule.sync_guilds, dispatched through RPC under the run
+# context). The gateway declares an instance under the kernel context on
 # seal, after Discord has connected, and again whenever the client joins or
 # leaves a guild (the provider's on_guild_join / on_guild_remove callbacks);
 # the workflow worker claims and runs it.
 #
 #   startup()    construct the providers with their configuration and the
-#                bot token, set the Discord guild callbacks, construct and
-#                connect the guild registry (a no-op: it rides the database
-#                module), and start the worker (it waits for the seal); no
+#                bot token (the RPC provider with the dispatch callable, the
+#                session getter and the denial writer), set the Discord guild
+#                callbacks, and start the worker (it waits for the seal); no
 #                Discord connection
-#   on_seal()    connect Discord (a provider that cannot connect raises and
-#                stops the seal), then declare discord_guild_sync. The seal
+#   on_seal()    mint the anonymous RPC session; connect Discord (a provider
+#                that cannot connect raises and stops the seal), then declare
+#                discord_guild_sync under the kernel context. The seal
 #                completes only after every on_seal(), so the worker's first
 #                pass finds Discord connected.
-#   on_unseal()  mark the gateway draining (send() refuses from here on), stop
-#                the worker, drain what is queued best-effort through the same
-#                pass the worker runs, disconnect
-#   shutdown()   disconnect the guild registry; teardown
+#   on_unseal()  drop the RPC session (every inbound request is refused from
+#                here on), mark the gateway draining (send() refuses from here
+#                on), stop the worker, drain what is queued best-effort
+#                through the same pass the worker runs, disconnect
+#   shutdown()   teardown
 #
 # -- Contract ----------------------------------------------------------------
 #   dispatch(IoRequest) -> IoResponse    route to the request's channel provider
@@ -60,23 +77,31 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   deliver_next() -> bool               one worker pass: send one queued text
 #                                        through the provider; False when the
 #                                        queue is empty
-#   sync_guilds() -> GuildSyncResult     upsert every guild the client is in;
-#                                        stamp left_on on every joined row the
-#                                        client no longer reports
+#   sync_guilds(context) -> GuildSyncResult
+#                                        hand the guilds the client is in to
+#                                        the Discord component under the
+#                                        caller's context (the workflow run's)
 #
 # -- Dependencies ------------------------------------------------------------
-#   DatabaseOperationsModule (the guild registry operations, through the
-#   guild registry provider)
+#   DatabaseOperationsModule
 #   EnvironmentVariablesModule (DISCORD_SECRET = the bot token; never logged,
-#   never a row. NS_HASH = the guild row keys and the core package key)
+#   never a row. NS_HASH and the hostname = the kernel context and the
+#   anonymous account key)
 #   KernelConfigurationModule (the discord_* configuration rows)
+#   KernelSecurityOperationsModule (mints the session, writes the gateway's
+#   denials)
+#   RpcOperationsModule (the RPC provider's dispatch)
 #   WorkflowOperationsModule (declares discord_guild_sync)
-#   gateway_execution_providers/*_gateway_provider, *_worker, and the guild
-#   registry provider in its __init__
+#   DiscordOperationsModule (the guild registry)
+#   gateway_execution_providers/*_gateway_provider, *_worker
 # ----------------------------------------------------------------------------
 
 CHANNEL_SUFFIX = "_gateway_provider"
 DISCORD = "discord"
+RPC = "rpc"
+# The session the RPC channel dispatches under: the anonymous account, by formula.
+ANONYMOUS = "anonymous"
+SESSION_CHANNEL = "RPC"
 WORKER = "discord_gateway_worker"
 SECRET = "DISCORD_SECRET"
 # The Discord channel's tunables live in system configuration, not in code. The
@@ -101,6 +126,11 @@ class GatewayExecutionModule(BaseModule):
     self._worker: BaseGatewayWorker | None = None
     self._queue: asyncio.Queue | None = None
     self._discord: DiscordOperationsModule | None = None
+    self._rpc: RpcOperationsModule | None = None
+    self._kernel_security: KernelSecurityOperationsModule | None = None
+    self._namespace: uuid.UUID | None = None
+    self._kernel: SecurityContext | None = None
+    self._session: SecurityContext | None = None
     self._system_channel_id: int = 0
     self._connected = False
     self._draining = False
@@ -116,6 +146,12 @@ class GatewayExecutionModule(BaseModule):
     await self._workflow.await_ready()
     self._discord = self.get_module(DiscordOperationsModule)
     await self._discord.await_ready()
+    self._kernel_security = self.get_module(KernelSecurityOperationsModule)
+    await self._kernel_security.await_ready()
+    self._rpc = self.get_module(RpcOperationsModule)
+    await self._rpc.await_ready()
+    self._namespace = uuid.UUID(env.get("NS_HASH"))
+    self._kernel = kernel_context(self._namespace, env.get_hostname())
     token = env.get(SECRET)
     if not token:
       raise RuntimeError("%s is not set: the Discord gateway has no bot token" % SECRET)
@@ -138,6 +174,8 @@ class GatewayExecutionModule(BaseModule):
         )
         self._providers[channel].on_guild_join = self._declare_guild_sync
         self._providers[channel].on_guild_remove = self._declare_guild_sync
+      elif channel == RPC:
+        self._providers[channel] = provider(self._rpc.dispatch, self._session_context, self._refuse)
       else:
         self._providers[channel] = provider()
     self._queue = asyncio.Queue()
@@ -168,12 +206,26 @@ class GatewayExecutionModule(BaseModule):
     await self._providers[DISCORD].send(channel_id, text)
     return True
 
-  async def sync_guilds(self) -> GuildSyncResult:
+  async def sync_guilds(self, context: SecurityContext) -> GuildSyncResult:
     # The discord_guild_sync step: the Discord component's registry follows what the client reports.
-    return await self._discord.sync_guilds(self._providers[DISCORD].guilds())
+    return await self._discord.sync_guilds(context, self._providers[DISCORD].guilds())
 
   async def _declare_guild_sync(self) -> None:
-    await self._workflow.declare(GUILD_SYNC)
+    await self._workflow.declare(self._kernel, GUILD_SYNC)
+
+  def _session_context(self) -> SecurityContext | None:
+    return self._session
+
+  async def _refuse(self, layer: str, reason: str, subject: str) -> None:
+    # The gateway's denial row: under the session, or under the kernel context
+    # when no session exists. deny() logs its own write failure; nothing raises.
+    context = self._session if self._session is not None else self._kernel
+    try:
+      if context is None:
+        raise RuntimeError("no context to record the denial under")
+      await self._kernel_security.deny(context, layer, reason, subject)
+    except Exception as e:
+      logger.error("Gateway denial write failed (%s %s): %s", layer, reason, type(e).__name__)
 
   def _channel(self, channel: str) -> BaseGatewayProvider:
     provider = self._providers.get(channel)
@@ -182,6 +234,12 @@ class GatewayExecutionModule(BaseModule):
     return provider
 
   async def on_seal(self):
+    # The one anonymous session the RPC channel dispatches under: carried in
+    # memory, nothing written. A mint that fails raises and stops the seal:
+    # no session is supplied instead.
+    anonymous = deterministic_guid(self._namespace, "system_users", ANONYMOUS)
+    self._session = self._kernel_security.mint(None, anonymous, anonymous, SESSION_CHANNEL, True)
+    logger.info("RPC session context minted")
     # A provider that cannot connect raises here and stops the seal.
     await self._providers[DISCORD].connect()
     self._connected = True
@@ -189,6 +247,7 @@ class GatewayExecutionModule(BaseModule):
     await self._declare_guild_sync()
 
   async def on_unseal(self):
+    self._session = None
     self._draining = True
     if self._worker is not None:
       await self._worker.stop()
@@ -211,6 +270,11 @@ class GatewayExecutionModule(BaseModule):
     self._worker = None
     self._queue = None
     self._providers.clear()
+    self._session = None
+    self._kernel = None
+    self._namespace = None
+    self._rpc = None
+    self._kernel_security = None
     self._discord = None
     self._workflow = None
     self._database = None

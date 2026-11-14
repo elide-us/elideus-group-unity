@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
-from server.kernel import BaseModule
+from server.kernel import BaseModule, SecurityContext
 from .entitlements_execution_module import EntitlementsExecutionModule
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -20,9 +20,11 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   entitlements() -> dict[str, dict]                [sync, cache-only]
 #   get(name: str) -> dict | None                    [sync, cache-only]
 #   resolve_entitlement(name: str) -> str | None     [sync, cache-only]
-#   create(name, display, notes=None, package_guid=None) -> str   (the key)
-#   update(name, display=None, notes=None) -> None
-#   delete(name) -> None
+#   create(context, name, display, notes=None, package_guid=None) -> str   (the key)
+#   update(context, name, display=None, notes=None) -> None
+#   delete(context, name) -> None
+#     Each write runs under the caller's context, taken first; nothing here
+#     supplies one.
 #
 # -- Dependencies ------------------------------------------------------------
 #   EntitlementsExecutionModule
@@ -47,20 +49,20 @@ class EntitlementsOperationsModule(BaseModule):
   def resolve_entitlement(self, name: str) -> str | None:
     return self._execution.entitlement_guid(name)
 
-  async def create(self, name: str, display: str, notes: str | None = None, package_guid: str | None = None) -> str:
+  async def create(self, context: SecurityContext, name: str, display: str, notes: str | None = None, package_guid: str | None = None) -> str:
     name = (name or "").strip()
     display = (display or "").strip()
     if not name or not display:
       raise ValueError("an entitlement needs a name and a display")
-    return await self._execution.create(name, display, notes, package_guid)
+    return await self._execution.create(context, name, display, notes, package_guid)
 
-  async def update(self, name: str, display: str | None = None, notes: str | None = None) -> None:
+  async def update(self, context: SecurityContext, name: str, display: str | None = None, notes: str | None = None) -> None:
     if display is None and notes is None:
       raise ValueError("nothing to update")
-    await self._execution.update(name, display, notes)
+    await self._execution.update(context, name, display, notes)
 
-  async def delete(self, name: str) -> None:
-    await self._execution.delete(name)
+  async def delete(self, context: SecurityContext, name: str) -> None:
+    await self._execution.delete(context, name)
 
   async def on_seal(self):
     pass

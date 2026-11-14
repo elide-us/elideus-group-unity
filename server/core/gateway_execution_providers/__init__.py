@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # response says whether the operation succeeded, names the model its result
 # is written in ('void' when there is none), and carries the result as JSON
 # text or the error.
+#
+# credential is what the caller presented to identify itself (the RPC
+# channel: the Authorization bearer value), None when nothing was presented.
+# It is never logged and never written: it is left out of the record's repr
+# and str, and no code formats it into a line.
 # ----------------------------------------------------------------------------
 
 class IoRequest(BaseModel):
@@ -29,6 +34,11 @@ class IoRequest(BaseModel):
   model: str
   params: str
   correlation_key: str
+  credential: str | None = None
+
+  def __repr_args__(self):
+    # The credential never reaches a log line through the record's repr or str.
+    return [(name, value) for name, value in super().__repr_args__() if name != "credential"]
 
 
 class IoResponse(BaseModel):

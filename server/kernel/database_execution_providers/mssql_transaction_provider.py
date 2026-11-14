@@ -18,7 +18,7 @@ class MssqlTransactionProvider(BaseDatabaseTransactionProvider):
       self.pool = None
       logger.info("Connection pool closed")
 
-  async def query(self, query: str, params: tuple | None = None) -> Any:
+  async def query(self, query: str, params: tuple | None, context_guid: str) -> Any:
     async with self.pool.acquire() as conn:
       async with conn.cursor() as cur:
         await cur.execute(query, params or ())
@@ -32,7 +32,7 @@ class MssqlTransactionProvider(BaseDatabaseTransactionProvider):
           return None
         return json.loads("".join(parts))
 
-  async def execute(self, query: str, params: tuple | None = None) -> int:
+  async def execute(self, query: str, params: tuple | None, context_guid: str) -> int:
     try:
       async with self.pool.acquire() as conn:
         async with conn.cursor() as cur:

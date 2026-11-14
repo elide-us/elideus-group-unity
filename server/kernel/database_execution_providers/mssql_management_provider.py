@@ -2,6 +2,7 @@ import logging
 
 from typing import Any
 
+from server.kernel import SecurityContext
 from . import BaseDatabaseTransactionProvider, ComposedDatabaseManagementProvider
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -11,19 +12,19 @@ class MssqlManagementProvider(ComposedDatabaseManagementProvider):
   def __init__(self, provider: BaseDatabaseTransactionProvider):
     super().__init__(provider)
 
-  async def generate(self, target: str, **params: Any) -> Any:
+  async def generate(self, context: SecurityContext, target: str, **params: Any) -> Any:
     match target:
       case "create_table":
-        return await self._generate_create_table(params["table"])
+        return await self._generate_create_table(context, params["table"])
       case _:
         logger.error("Unknown generate target '%s'", target)
         return None
 
-  async def alter(self, target: str, **params: Any) -> Any:
+  async def alter(self, context: SecurityContext, target: str, **params: Any) -> Any:
     logger.error("alter target '%s' not implemented", target)
     return None
 
-  async def _generate_create_table(self, table: str) -> Any:
+  async def _generate_create_table(self, context: SecurityContext, table: str) -> Any:
     sql = """SELECT
          s.name AS pub_schema,
          t.name AS pub_table,
@@ -42,4 +43,4 @@ class MssqlManagementProvider(ComposedDatabaseManagementProvider):
        JOIN sys.types ty ON c.user_type_id = ty.user_type_id
        WHERE t.name = ?
        FOR JSON PATH, INCLUDE_NULL_VALUES"""
-    return await self._provider.query(sql, (table,))
+    return await self._provider.query(sql, (table,), context.key_guid)

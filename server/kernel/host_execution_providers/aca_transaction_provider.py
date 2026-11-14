@@ -1,5 +1,6 @@
 import logging
 
+from server.kernel import SecurityContext
 from server.kernel.database_operations_module import DBRequest
 from server.kernel.host_execution_providers import BaseKernelHostProvider, ServiceHost
 
@@ -22,7 +23,7 @@ class AcaTransactionProvider(BaseKernelHostProvider):
   async def disconnect(self):
     pass
 
-  async def register(self, key_guid: str, status: str, host_name: str, pid: int, kernel_version: str) -> None:
+  async def register(self, context: SecurityContext, key_guid: str, status: str, host_name: str, pid: int, kernel_version: str, entrypoint_guid: str) -> None:
     # Parameter order is the operation's input model order.
     await self._one(REGISTER, {
       "key_guid": key_guid,
@@ -30,45 +31,46 @@ class AcaTransactionProvider(BaseKernelHostProvider):
       "pub_host_name": host_name,
       "pub_pid": pid,
       "pub_kernel_version": kernel_version,
-    })
+      "ref_entrypoint_guid": entrypoint_guid,
+    }, context)
 
-  async def seal(self, key_guid: str, status: str, core_package_guid: str) -> None:
+  async def seal(self, context: SecurityContext, key_guid: str, status: str, core_package_guid: str) -> None:
     await self._one(SEAL, {
       "ref_status_enum_guid": status,
       "ref_core_package_guid": core_package_guid,
       "key_guid": key_guid,
-    })
+    }, context)
 
-  async def set_status(self, key_guid: str, status: str) -> None:
-    await self._one(SET_STATUS, {"ref_status_enum_guid": status, "key_guid": key_guid})
+  async def set_status(self, context: SecurityContext, key_guid: str, status: str) -> None:
+    await self._one(SET_STATUS, {"ref_status_enum_guid": status, "key_guid": key_guid}, context)
 
-  async def heartbeat(self, key_guid: str) -> None:
-    await self._one(HEARTBEAT, {"key_guid": key_guid})
+  async def heartbeat(self, context: SecurityContext, key_guid: str) -> None:
+    await self._one(HEARTBEAT, {"key_guid": key_guid}, context)
 
-  async def read(self, key_guid: str) -> ServiceHost | None:
-    raw = await self._database.query(DBRequest(READ, {"key_guid": key_guid}))
+  async def read(self, context: SecurityContext, key_guid: str) -> ServiceHost | None:
+    raw = await self._database.query(DBRequest(READ, {"key_guid": key_guid}, context))
     row = raw if isinstance(raw, dict) else (raw[0] if raw else None)
     return None if row is None else ServiceHost.model_validate(row)
 
-  async def release_stale(self, stopped: str, grace_seconds: int) -> int:
+  async def release_stale(self, context: SecurityContext, stopped: str, grace_seconds: int) -> int:
     affected = await self._database.execute(DBRequest(RELEASE_STALE, {
       "ref_status_enum_guid": stopped,
       "ref_stopped_enum_guid": stopped,
       "pub_grace_seconds": grace_seconds,
-    }))
+    }, context))
     if affected is None or affected < 0:
       raise RuntimeError("%s did not run" % RELEASE_STALE)
     return affected
 
-  async def reload(self, key_guid: str, reloading: str, sealed: str) -> None:
+  async def reload(self, context: SecurityContext, key_guid: str, reloading: str, sealed: str) -> None:
     await self._one(RELOAD, {
       "ref_status_enum_guid": reloading,
       "key_guid": key_guid,
       "ref_sealed_enum_guid": sealed,
-    })
+    }, context)
 
-  async def _one(self, op: str, params: dict) -> None:
+  async def _one(self, op: str, params: dict, context: SecurityContext) -> None:
     # One statement, one row, committed by the kernel: atomic by construction.
-    affected = await self._database.execute(DBRequest(op, params))
+    affected = await self._database.execute(DBRequest(op, params, context))
     if affected != 1:
       raise RuntimeError("%s affected %s rows, expected 1" % (op, affected))

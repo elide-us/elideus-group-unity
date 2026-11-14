@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, sys, json, gzip, uuid, re, ast, shutil
+import os, sys, json, gzip, uuid, re, ast, shutil, asyncio
 from datetime import datetime, timezone
 
 # The kernel carries the database schema version; the installer stamps it.
@@ -223,8 +223,9 @@ def _generate_alias(name: str, taken: set[str]) -> str:
 #                      "populate: modules" below)
 #
 # Idempotent via MERGE on deterministic key_guid. The pass flags
-# (pub_exclude_element, pub_delete_disposition) are derived, not authored:
-# every populate run recomputes them from the live catalog. pub_seed_element
+# (pub_exclude_element, pub_delete_disposition) are derived: every populate
+# run recomputes them from the live catalog, except that an authored
+# pub_exclude_element = 1 on an existing column row is kept. pub_seed_element
 # is authored (the installer's seed set) and never written here.
 #
 # Ordinals. Three declaration tables are unique on (parent, pub_ordinal):
@@ -457,10 +458,14 @@ async def _populate_columns(conn, table_guids: dict[str, str],
   # (a fresh database after the installer, where physical = declared by
   # construction). A physical column with no row on a declared table is a
   # missing declaration: refused by name, the migration must declare it.
+  # pub_exclude_element is set by the _excluded_from_seed rule, and a 1 a
+  # migration authored on an existing row is kept (a column that is no seed
+  # data by decision, not by name, e.g. a sequence position).
   declared_rows = await _query_json(
-    conn, 'SELECT [key_guid], [ref_table_guid], [pub_ordinal] FROM %s FOR JSON PATH' % _kt('contracts_db_columns'))
+    conn, 'SELECT [key_guid], [ref_table_guid], [pub_ordinal], [pub_exclude_element] FROM %s FOR JSON PATH' % _kt('contracts_db_columns'))
   declared = {d['key_guid'].upper(): abs(d['pub_ordinal']) for d in declared_rows}
   declared_tables = {d['ref_table_guid'].upper() for d in declared_rows}
+  excluded = {d['key_guid'].upper() for d in declared_rows if d['pub_exclude_element']}
   undeclared: list[str] = []
   await _park_ordinals(conn, 'contracts_db_columns')
   for r in rows:
@@ -503,7 +508,7 @@ async def _populate_columns(conn, table_guids: dict[str, str],
       'pub_is_nullable': int(bool(r['pub_is_nullable'])),
       'pub_default_value': default_value,
       'pub_max_length': max_length,
-      'pub_exclude_element': int(_excluded_from_seed(r['pub_name'])),
+      'pub_exclude_element': int(_excluded_from_seed(r['pub_name']) or column_guid in excluded),
     })
     guids[column_natural] = g
   if undeclared:
@@ -917,8 +922,9 @@ class _ModuleGraph:
     self.add_model('void', KERNEL_GUID, [], 'The empty model: a function with no parameters takes it, a function that returns nothing returns it.')
     self.add_model('db_request', KERNEL_GUID, [
       _Field('op', _Slot('type', 'STRING')),
-      _Field('params', _Slot('type', 'JSON_DOC', note='dict[str, Any]'), '{}'),
-    ], 'DBRequest (dataclass): the named-operation request DatabaseOperationsModule dispatches.')
+      _Field('params', _Slot('type', 'JSON_DOC', note='dict')),
+      _Field('context', _Slot('model', 'security_context')),
+    ], 'DBRequest (dataclass): the named-operation request DatabaseOperationsModule dispatches, under a security context.')
 
   def add_model(self, name: str, owner: str, fields: list, notes: str | None = None) -> str:
     if name in self.models:
@@ -1156,6 +1162,9 @@ def _reflect_modules(root: str) -> _ModuleGraph:
   _collect_classes(graph, root, 'kernel', KERNEL_GUID)
   _collect_classes(graph, root, 'core', CORE_GUID)
   _register_record_models(graph)
+  unreflected = sorted({f.slot.target for m in graph.models.values() for f in m['fields'] if f.slot.kind == 'model'} - set(graph.models))
+  if unreflected:
+    raise ValueError('model field(s) reference model(s) the tree does not define: %s' % ', '.join(unreflected))
   # keep only the module family: the three roots and everything under them,
   # plus the kernel services
   for name in list(graph.order):
@@ -2613,3 +2622,94 @@ async def uninstall(conn, pkg_name: str, confirm: bool = False) -> None:
     print('  FAILED: %s' % e)
     return
   print('Uninstall complete.')
+
+
+# =============================================================================
+# init_admin
+# =============================================================================
+#
+# Makes the person at the keyboard the first administrator. Signs in with a
+# Microsoft personal account (azure.identity.InteractiveBrowserCredential,
+# tenant 'consumers', scope User.Read); the subject is the part of the
+# record's home_account_id before the dot. When a MICROSOFT identity with that
+# subject exists it reports and writes nothing. Otherwise, in one transaction,
+# under the setup context (system_security_contexts:setup) as the granting
+# context and with ref_package_guid NULL on every row (operational data, no
+# package owns it): the INTERACTIVE account (random key, enabled, display and
+# email = the signed-in username), its MICROSOFT identity, ROLE_GLOBAL_ADMIN
+# and one grant of every entitlement. Prints the username and what was
+# written; never a token, never an account key.
+# =============================================================================
+
+async def init_admin(conn) -> None:
+  client_id = os.getenv('MICROSOFT_CLIENT_ID')
+  if not client_id:
+    raise RuntimeError('MICROSOFT_CLIENT_ID not set')
+  try:
+    from azure.identity import InteractiveBrowserCredential  # type: ignore
+  except Exception as e:
+    raise ImportError('azure-identity is required for init admin') from e
+  credential = InteractiveBrowserCredential(client_id=client_id, tenant_id='consumers')
+  print('Opening the browser to sign in...')
+  # authenticate() blocks until the browser flow ends; run it off the event loop.
+  record = await asyncio.to_thread(credential.authenticate, scopes=['User.Read'])
+  subject = str(uuid.UUID(record.home_account_id.split('.')[0])).upper()
+  print('Signed in as %s' % record.username)
+  provider_guid = _guid('contracts_primitives_enums', 'identity_provider.MICROSOFT')
+  existing = await _query_json(
+    conn,
+    f"""SELECT [sui].[key_guid]
+       FROM {_qt(MANIFEST_SCHEMA, 'system_user_identities')} AS [sui]
+       WHERE [sui].[ref_provider_enum_guid] = ? AND [sui].[pub_subject] = ?
+       FOR JSON PATH""",
+    (provider_guid, subject)
+  )
+  if existing:
+    print('  a MICROSOFT identity for this account already exists; nothing written')
+    return
+  entitlements = await _query_json(
+    conn,
+    f"""SELECT [sse].[key_guid], [sse].[pub_name]
+       FROM {_qt(MANIFEST_SCHEMA, 'service_security_entitlements')} AS [sse]
+       ORDER BY [sse].[pub_name]
+       FOR JSON PATH"""
+  )
+  context_guid = _guid('system_security_contexts', 'setup')
+  user_guid = str(uuid.uuid4()).upper()
+  await _execute(conn, 'BEGIN TRANSACTION')
+  try:
+    await _execute(
+      conn,
+      f"""INSERT INTO {_qt(MANIFEST_SCHEMA, 'system_users')} ([key_guid], [ref_package_guid], [ref_kind_enum_guid], [pub_email], [pub_display], [pub_is_enabled])
+         VALUES (?, NULL, ?, ?, ?, 1)""",
+      (user_guid, _guid('contracts_primitives_enums', 'account_kind.INTERACTIVE'), record.username, record.username)
+    )
+    await _execute(
+      conn,
+      f"""INSERT INTO {_qt(MANIFEST_SCHEMA, 'system_user_identities')} ([key_guid], [ref_package_guid], [ref_user_guid], [ref_provider_enum_guid], [pub_subject], [pub_tenant])
+         VALUES (?, NULL, ?, ?, ?, ?)""",
+      (_guid('system_user_identities', 'MICROSOFT.%s' % subject), user_guid, provider_guid, subject, record.tenant_id)
+    )
+    await _execute(
+      conn,
+      f"""INSERT INTO {_qt(MANIFEST_SCHEMA, 'system_user_roles')} ([key_guid], [ref_package_guid], [ref_user_guid], [ref_role_guid], [ref_granted_context_guid], [pub_granted_on])
+         VALUES (?, NULL, ?, ?, ?, SYSDATETIMEOFFSET())""",
+      (_guid('system_user_roles', '%s.ROLE_GLOBAL_ADMIN' % user_guid), user_guid,
+       _guid('service_security_roles', 'ROLE_GLOBAL_ADMIN'), context_guid)
+    )
+    for e in entitlements:
+      await _execute(
+        conn,
+        f"""INSERT INTO {_qt(MANIFEST_SCHEMA, 'system_user_entitlements')} ([key_guid], [ref_package_guid], [ref_user_guid], [ref_entitlement_guid], [ref_granted_context_guid], [pub_granted_on])
+           VALUES (?, NULL, ?, ?, ?, SYSDATETIMEOFFSET())""",
+        (_guid('system_user_entitlements', '%s.%s' % (user_guid, e['pub_name'])), user_guid, e['key_guid'], context_guid)
+      )
+    await _execute(conn, 'COMMIT TRANSACTION')
+  except Exception:
+    await _execute(conn, 'IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION')
+    raise
+  print('  system_users: 1 (INTERACTIVE, enabled, %s)' % record.username)
+  print('  system_user_identities: 1 (MICROSOFT)')
+  print('  system_user_roles: 1 (ROLE_GLOBAL_ADMIN)')
+  print('  system_user_entitlements: %d (%s)' % (len(entitlements), ', '.join(e['pub_name'] for e in entitlements)))
+  print('Init admin complete.')
