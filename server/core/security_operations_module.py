@@ -3,29 +3,31 @@ from typing import Iterable
 
 from fastapi import FastAPI
 
-from server.kernel import BaseModule
-from .security_execution_module import SecurityExecutionModule
+from server.kernel import BaseModule, SecurityContext
+from .security_execution_module import Decoration, SecurityExecutionModule
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 # ----------------------------------------------------------------------------
 # SecurityOperationsModule
 # ----------------------------------------------------------------------------
-# Manager (Operations) for the Security subsystem: the public contract gateway
-# providers call to evaluate a user's roles and entitlements against a domain
-# / subdomain / function before dispatch, and the API the application uses to
-# read and change the roles catalogue and its nested groups. No provider
-# layer: security never leaves the application. Security is the first layer
-# consulted after the database connection; nothing goes around it.
+# Manager (Operations) for the Security subsystem: the public contract the
+# RPC layer calls to resolve an account's decoration and evaluate it against
+# a function's roles and entitlements before dispatch, and the API the
+# application uses to read and change the roles catalogue and its nested
+# groups. No provider layer: security never leaves the application. Nothing
+# goes around it.
 #
 # Create, update and delete roles; add and remove group members. It does NOT
 # assign roles to users (another subsystem). Roles are created in the context
 # of a package; the package-authoring surface supplies the package and
 # enforces that.
 #
-# First pass: role and entitlement resolution by name, and the effective
-# role set through nested groups. The domain / subdomain / function checks
-# arrive with the user mapping tables and the RPC registry.
+# resolve_decoration(context) reads the context's ACTOR per unit of work
+# (never cached) and raises AccessDenied(AUTHORIZATION, DISABLED_ACCOUNT) for
+# an unknown, disabled or unreadable account; the caller writes the denial.
+# evaluate(...) is two independent gates: one of the role_guids held AND one
+# of the entitlement_guids held; an empty list is false.
 #
 # -- Contract ----------------------------------------------------------------
 #   roles() -> dict[str, dict]                     [sync, cache-only]
@@ -36,11 +38,13 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   groups() -> dict[str, set[str]]                [sync, cache-only]
 #   members_of(group: str) -> set[str]             [sync, cache-only]  transitive
 #   effective_roles(names: Iterable[str]) -> set[str]
-#   create(name, display, notes=None, package_guid=None) -> str   (the key)
-#   update(name, display=None, notes=None) -> None
-#   delete(name) -> None
-#   add_member(group, member, package_guid=None) -> str           (the key)
-#   remove_member(group, member) -> None
+#   resolve_decoration(context) -> Decoration
+#   evaluate(decoration, role_guids, entitlement_guids) -> bool   [sync]
+#   create(context, name, display, notes=None, package_guid=None) -> str   (the key)
+#   update(context, name, display=None, notes=None) -> None
+#   delete(context, name) -> None
+#   add_member(context, group, member, package_guid=None) -> str           (the key)
+#   remove_member(context, group, member) -> None
 #
 # -- Dependencies ------------------------------------------------------------
 #   SecurityExecutionModule
@@ -80,26 +84,32 @@ class SecurityOperationsModule(BaseModule):
   def effective_roles(self, names: Iterable[str]) -> set[str]:
     return self._execution.effective_roles(names)
 
-  async def create(self, name: str, display: str, notes: str | None = None, package_guid: str | None = None) -> str:
+  async def resolve_decoration(self, context: SecurityContext) -> Decoration:
+    return await self._execution.resolve_decoration(context)
+
+  def evaluate(self, decoration: Decoration, role_guids: list[str], entitlement_guids: list[str]) -> bool:
+    return self._execution.evaluate(decoration, role_guids, entitlement_guids)
+
+  async def create(self, context: SecurityContext, name: str, display: str, notes: str | None = None, package_guid: str | None = None) -> str:
     name = (name or "").strip()
     display = (display or "").strip()
     if not name or not display:
       raise ValueError("a security role needs a name and a display")
-    return await self._execution.create(name, display, notes, package_guid)
+    return await self._execution.create(context, name, display, notes, package_guid)
 
-  async def update(self, name: str, display: str | None = None, notes: str | None = None) -> None:
+  async def update(self, context: SecurityContext, name: str, display: str | None = None, notes: str | None = None) -> None:
     if display is None and notes is None:
       raise ValueError("nothing to update")
-    await self._execution.update(name, display, notes)
+    await self._execution.update(context, name, display, notes)
 
-  async def delete(self, name: str) -> None:
-    await self._execution.delete(name)
+  async def delete(self, context: SecurityContext, name: str) -> None:
+    await self._execution.delete(context, name)
 
-  async def add_member(self, group: str, member: str, package_guid: str | None = None) -> str:
-    return await self._execution.add_member(group, member, package_guid)
+  async def add_member(self, context: SecurityContext, group: str, member: str, package_guid: str | None = None) -> str:
+    return await self._execution.add_member(context, group, member, package_guid)
 
-  async def remove_member(self, group: str, member: str) -> None:
-    await self._execution.remove_member(group, member)
+  async def remove_member(self, context: SecurityContext, group: str, member: str) -> None:
+    await self._execution.remove_member(context, group, member)
 
   async def on_seal(self):
     pass

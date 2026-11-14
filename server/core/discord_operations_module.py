@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
-from server.kernel import BaseModule
+from server.kernel import BaseModule, SecurityContext
 from .discord_execution_module import DiscordExecutionModule, DiscordGuildRow, GuildSyncResult
 from .gateway_execution_providers import DiscordGuild
 
@@ -20,11 +20,16 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # mapping onto system_organizations is the executor's, when it lands.
 #
 # -- Contract ----------------------------------------------------------------
-#   sync_guilds(current) -> GuildSyncResult   the registry follows the guilds
+# Every function reaches the database and takes the SecurityContext it runs
+# under first; nothing here supplies one.
+#
+#   sync_guilds(context, guilds) -> GuildSyncResult
+#                                             the registry follows the guilds
 #                                             the client reports (the Gateway's
 #                                             discord_guild_sync step hands them over)
-#   guilds() -> list[DiscordGuildRow]         the registry as it stands
-#   assign_guild_owner(guild_id, user_guid)   the one account user who owns
+#   guilds(context) -> list[DiscordGuildRow]  the registry as it stands
+#   assign_guild_owner(context, guild_id, user_guid)
+#                                             the one account user who owns
 #                                             the guild; changeable. Credits
 #                                             and billing belong to a Finance
 #                                             package, not built, not here.
@@ -43,14 +48,14 @@ class DiscordOperationsModule(BaseModule):
     await self._execution.await_ready()
     self.raise_ready()
 
-  async def sync_guilds(self, current: list[DiscordGuild]) -> GuildSyncResult:
-    return await self._execution.sync_guilds(current)
+  async def sync_guilds(self, context: SecurityContext, guilds: list[DiscordGuild]) -> GuildSyncResult:
+    return await self._execution.sync_guilds(context, guilds)
 
-  async def guilds(self) -> list[DiscordGuildRow]:
-    return await self._execution.guilds()
+  async def guilds(self, context: SecurityContext) -> list[DiscordGuildRow]:
+    return await self._execution.guilds(context)
 
-  async def assign_guild_owner(self, guild_id: int, user_guid: str) -> None:
-    await self._execution.assign_guild_owner(guild_id, user_guid)
+  async def assign_guild_owner(self, context: SecurityContext, guild_id: int, user_guid: str) -> None:
+    await self._execution.assign_guild_owner(context, guild_id, user_guid)
 
   async def on_seal(self):
     pass

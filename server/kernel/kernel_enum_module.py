@@ -1,10 +1,11 @@
-import logging
+import logging, uuid
 from enum import IntEnum
 
 from fastapi import FastAPI
 
-from . import BaseModule
-from .database_execution_module import DatabaseExecutionModule
+from . import BaseModule, SecurityContext, kernel_context
+from .database_operations_module import DatabaseOperationsModule, DBRequest
+from .environment_variables_module import EnvironmentVariablesModule
 from server.helpers import snake_to_pascal
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -17,8 +18,10 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #
 # Each enum type is a row in the header table with a name (e.g.
 # "constraint_kind", "schema_source"). Each member is a row in the line
-# table FK'd to the header. This module loads the full join at startup
-# and constructs one IntEnum class per type via Python's functional API.
+# table FK'd to the header. This module loads the full join at startup,
+# through the operation db:contracts:enums:read_all:1 under the kernel
+# context (rows pub_name, cpe_members), and constructs one IntEnum class per
+# type via Python's functional API.
 #
 # The constructed classes are not declared statically anywhere. The
 # database is canonical; if code disagrees with the database, code is
@@ -31,42 +34,35 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #       SchemaSource = enum_module.get("schema_source")
 #       value = SchemaSource.PRIMARY      # IntEnum member, == int(0)
 #
-#   flush() -> None
+#   flush(context: SecurityContext) -> None
 #     Clears the in-memory cache. The next module restart repopulates it.
+#     The context is the unit of work that asked (an RPC target).
 #
 # -- Dependencies ------------------------------------------------------------
-#   DatabaseExecutionModule — all SQL goes through its contract.
+#   DatabaseOperationsModule — the read goes through a named operation.
+#   EnvironmentVariablesModule — NS_HASH and the hostname derive the kernel
+#     context.
 #
 # ----------------------------------------------------------------------------
+
+# The enum operation this module dispatches (a kernel-owned bootstrap row).
+READ_ALL = "db:contracts:enums:read_all:1"
+
 
 class KernelEnumModule(BaseModule):
   def __init__(self, app: FastAPI):
     super().__init__(app)
     self._cache: dict[str, type[IntEnum]] = {}
-    self._db: DatabaseExecutionModule | None = None
+    self._database: DatabaseOperationsModule | None = None
 
   async def startup(self):
-    self._db = self.get_module(DatabaseExecutionModule)
-    await self._db.await_ready()
+    self._database = self.get_module(DatabaseOperationsModule)
+    await self._database.await_ready()
+    env = self.get_module(EnvironmentVariablesModule)
+    await env.await_ready()
+    kernel = kernel_context(uuid.UUID(env.get("NS_HASH")), env.get_hostname())
 
-    # AS [alias] is required when using FOR JSON PATH for key naming purposes
-    bootstrap_sql = """
-      SELECT
-        [cpet].[pub_name],
-        (
-          SELECT
-            [cpe].[pub_name],
-            [cpe].[pub_value]
-          FROM [etg].[contracts_primitives_enums] AS [cpe]
-          WHERE [cpe].[ref_enum_type_guid] = [cpet].[key_guid]
-          ORDER BY [cpe].[pub_value]
-          FOR JSON PATH
-        ) AS [cpe_members]
-      FROM [etg].[contracts_primitives_enum_types] AS [cpet]
-      ORDER BY [cpet].[pub_name]
-      FOR JSON PATH;
-    """
-    raw = await self._db.query(bootstrap_sql)
+    raw = await self._database.query(DBRequest(READ_ALL, {}, kernel))
     if raw is None:
       logger.warning("No enum types found (empty tables)")
       self.raise_ready()
@@ -75,7 +71,9 @@ class KernelEnumModule(BaseModule):
     rows = raw if isinstance(raw, list) else [raw]
     for row in rows:
       type_name = row["pub_name"]
-      members = row["cpe_members"]
+      # A type with no members has no cpe_members key: the nested FOR JSON
+      # returns NULL and the key is omitted.
+      members = row.get("cpe_members")
       if not members:
         logger.warning("Enum type '%s' has no members; no class constructed", type_name)
         continue
@@ -97,6 +95,7 @@ class KernelEnumModule(BaseModule):
 
   async def shutdown(self):
     self._cache.clear()
+    self._database = None
 
   def get(self, enum_type: str) -> type[IntEnum] | None:
     cls = self._cache.get(enum_type)
@@ -105,6 +104,6 @@ class KernelEnumModule(BaseModule):
       return None
     return cls
 
-  def flush(self):
+  def flush(self, context: SecurityContext) -> None:
     self._cache.clear()
     logger.info("Cache flushed")

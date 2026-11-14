@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
-from server.kernel import BaseModule
+from server.kernel import BaseModule, SecurityContext
 from .gateway_execution_module import GatewayExecutionModule
 from .gateway_execution_providers import IoRequest, IoResponse
 from .discord_execution_module import GuildSyncResult
@@ -21,11 +21,17 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #   dispatch(IoRequest) -> IoResponse    perform one operation on a channel
 #   send(channel, text) -> None          [sync] enqueue an outbound text on a
 #                                        channel (the logger's one call)
-#   sync_guilds() -> GuildSyncResult     hand the guilds the bot is in to the
+#   sync_guilds(context) -> GuildSyncResult
+#                                        hand the guilds the bot is in to the
 #                                        Discord component (its registry
-#                                        follows the client): the contract the
-#                                        discord_guild_sync workflow step names
-#                                        (only the workflow worker calls it)
+#                                        follows the client) under the caller's
+#                                        context: the target of
+#                                        urn:system:discord:sync_guilds:1, the
+#                                        discord_guild_sync workflow step
+#                                        (reached only through RPC dispatch)
+#
+# An inbound RPC request arrives here as IoRequest(channel 'rpc', operation
+# = the URN, params = the JSON text, credential = the bearer value or None).
 #
 # -- Dependencies ------------------------------------------------------------
 #   GatewayExecutionModule
@@ -47,8 +53,8 @@ class GatewayOperationsModule(BaseModule):
   def send(self, channel: str, text: str) -> None:
     self._execution.send(channel, text)
 
-  async def sync_guilds(self) -> GuildSyncResult:
-    return await self._execution.sync_guilds()
+  async def sync_guilds(self, context: SecurityContext) -> GuildSyncResult:
+    return await self._execution.sync_guilds(context)
 
   async def on_seal(self):
     pass

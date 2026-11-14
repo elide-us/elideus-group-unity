@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-from scriptlib import connect, make_installer, install, list_packages, uninstall, make_package, make_requirements, populate
+from scriptlib import connect, make_installer, install, list_packages, uninstall, make_package, make_requirements, populate, init_admin
 
 
 HELP_TEXT = """\
@@ -17,6 +17,7 @@ Available commands:
   list packages                 Show installed packages and row ownership
   uninstall <name>              Show uninstall plan (dry run)
   uninstall <name> confirm      Execute uninstall
+  init admin                    Sign in with Microsoft; make that account the first global admin (once)
   <raw sql>                     Run as-is, print rows or rowcount
 """
 
@@ -74,6 +75,11 @@ async def interactive_console(conn):
           await install(conn, path)
         except Exception as e:
           print('Error installing: %s' % e)
+      case ['init', 'admin']:
+        try:
+          await init_admin(conn)
+        except Exception as e:
+          print('Error initializing admin: %s' % e)
       case ['list', 'packages']:
         try:
           await list_packages(conn)

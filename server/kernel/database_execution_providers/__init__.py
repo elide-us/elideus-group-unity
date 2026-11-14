@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-from server.kernel import BaseWorker, BaseProvider
+from server.kernel import BaseWorker, BaseProvider, SecurityContext
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # DatabaseExecutionModule. One concrete implementation per SQL engine.
 # All SELECTs use FOR JSON PATH; query returns parsed JSON; execute returns
 # rowcount with -1 as the failure sentinel.
+#
+# Every statement arrives with the key of the security context it runs
+# under. Nothing is sent to the database for it. The provider is where a
+# table flagged in the audit setup is logged with that context; that logging
+# is not built, and until it is the key is carried and unused here.
 # ----------------------------------------------------------------------------
 
 class BaseDatabaseTransactionProvider(BaseProvider):
@@ -28,11 +33,11 @@ class BaseDatabaseTransactionProvider(BaseProvider):
     pass
 
   @abstractmethod
-  async def query(self, query: str, params: tuple | None = None) -> Any:
+  async def query(self, query: str, params: tuple | None, context_guid: str) -> Any:
     pass
 
   @abstractmethod
-  async def execute(self, query: str, params: tuple | None = None) -> int:
+  async def execute(self, query: str, params: tuple | None, context_guid: str) -> int:
     pass
 
 
@@ -57,6 +62,9 @@ class BaseDatabaseTransactionProvider(BaseProvider):
 #   declared schema delta, dropping and rebuilding a constraint, adding
 #   a column with data preservation.
 #
+# Both verbs take the security context first; every statement they issue
+# runs under its key.
+#
 # Single-statement reads belong in DatabaseOperationsModule as cataloged
 # op rows, not here. This layer exists for multi-statement, decision-tree
 # work whose shape doesn't fit the one-string-in-one-result-out contract.
@@ -67,11 +75,11 @@ class ComposedDatabaseManagementProvider(ABC):
     self._provider = provider
 
   @abstractmethod
-  async def generate(self, target: str, **params: Any) -> Any:
+  async def generate(self, context: SecurityContext, target: str, **params: Any) -> Any:
     pass
 
   @abstractmethod
-  async def alter(self, target: str, **params: Any) -> Any:
+  async def alter(self, context: SecurityContext, target: str, **params: Any) -> Any:
     pass
 
 

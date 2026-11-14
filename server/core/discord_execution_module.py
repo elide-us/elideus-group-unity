@@ -4,7 +4,7 @@ import uuid
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from server.kernel import BaseModule
+from server.kernel import BaseModule, SecurityContext
 from server.kernel.database_operations_module import DatabaseOperationsModule, DBRequest
 from server.kernel.environment_variables_module import EnvironmentVariablesModule
 from server.helpers import deterministic_guid
@@ -57,6 +57,15 @@ class GuildSyncResult(BaseModel):
 # connection is an IoGateway channel and is not here. Rows are keyed by
 # formula over NS_HASH and the guild snowflake; core owns them.
 #
+# Every function that reaches the database takes the SecurityContext it runs
+# under first and hands it to every request; a sync's own read of the
+# registry runs under the same context. Nothing here supplies one.
+#
+# -- Contract ----------------------------------------------------------------
+#   sync_guilds(context, guilds) -> GuildSyncResult
+#   guilds(context) -> list[DiscordGuildRow]
+#   assign_guild_owner(context, guild_id, user_guid) -> None
+#
 # -- Dependencies ------------------------------------------------------------
 #   DatabaseOperationsModule, EnvironmentVariablesModule (NS_HASH)
 # ----------------------------------------------------------------------------
@@ -84,12 +93,12 @@ class DiscordExecutionModule(BaseModule):
     self._core_guid = deterministic_guid(self._namespace, "service_packages_manifest", "core")
     self.raise_ready()
 
-  async def sync_guilds(self, current: list[DiscordGuild]) -> GuildSyncResult:
+  async def sync_guilds(self, context: SecurityContext, guilds: list[DiscordGuild]) -> GuildSyncResult:
     seen = set()
-    for guild in current:
+    for guild in guilds:
       key_guid = deterministic_guid(self._namespace, GUILDS_TABLE, str(guild.guild_id))
       # Parameter order is the operation's input model order.
-      await self._one(GUILDS_UPSERT, {
+      await self._one(context, GUILDS_UPSERT, {
         "key_guid": key_guid,
         "ref_package_guid": self._core_guid,
         "pub_guild_id": guild.guild_id,
@@ -100,26 +109,26 @@ class DiscordExecutionModule(BaseModule):
       })
       seen.add(guild.guild_id)
     left = 0
-    for row in await self.guilds():
+    for row in await self.guilds(context):
       if row.pub_left_on is None and row.pub_guild_id not in seen:
-        await self._one(GUILDS_MARK_LEFT, {"pub_guild_id": row.pub_guild_id})
+        await self._one(context, GUILDS_MARK_LEFT, {"pub_guild_id": row.pub_guild_id})
         left += 1
-    logger.info("Discord guild sync: %d guild(s) synced, %d marked left", len(current), left)
-    return GuildSyncResult(synced=len(current), left=left)
+    logger.info("Discord guild sync: %d guild(s) synced, %d marked left", len(guilds), left)
+    return GuildSyncResult(synced=len(guilds), left=left)
 
-  async def guilds(self) -> list[DiscordGuildRow]:
-    raw = await self._database.query(DBRequest(GUILDS_READ_ALL))
+  async def guilds(self, context: SecurityContext) -> list[DiscordGuildRow]:
+    raw = await self._database.query(DBRequest(GUILDS_READ_ALL, {}, context))
     rows = [] if raw is None else raw if isinstance(raw, list) else [raw]
     return [DiscordGuildRow.model_validate(row) for row in rows]
 
-  async def assign_guild_owner(self, guild_id: int, user_guid: str) -> None:
+  async def assign_guild_owner(self, context: SecurityContext, guild_id: int, user_guid: str) -> None:
     # One account user owns a guild; the assignment can change. A guild the
     # registry does not hold affects no row and raises.
-    await self._one(GUILDS_ASSIGN_OWNER, {"ref_owner_user_guid": user_guid, "pub_guild_id": guild_id})
+    await self._one(context, GUILDS_ASSIGN_OWNER, {"ref_owner_user_guid": user_guid, "pub_guild_id": guild_id})
 
-  async def _one(self, op: str, params: dict) -> None:
+  async def _one(self, context: SecurityContext, op: str, params: dict) -> None:
     # One statement, one row, committed by the kernel: atomic by construction.
-    affected = await self._database.execute(DBRequest(op, params))
+    affected = await self._database.execute(DBRequest(op, params, context))
     if affected != 1:
       raise RuntimeError("%s affected %s rows, expected 1" % (op, affected))
 

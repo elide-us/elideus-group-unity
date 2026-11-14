@@ -264,6 +264,17 @@ CREATE TABLE [dbo].[system_user_entitlements] (
   [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
   [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
 );
+CREATE TABLE [dbo].[system_user_identities] (
+  [key_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_package_guid] UNIQUEIDENTIFIER NULL,
+  [ref_user_guid] UNIQUEIDENTIFIER NOT NULL,
+  [ref_provider_enum_guid] UNIQUEIDENTIFIER NOT NULL,
+  [pub_subject] UNIQUEIDENTIFIER NOT NULL,
+  [pub_tenant] NVARCHAR(64) NULL,
+  [pub_last_login_on] DATETIMEOFFSET(7) NULL,
+  [priv_created_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL,
+  [priv_modified_on] DATETIMEOFFSET(7) DEFAULT (SYSDATETIMEOFFSET()) NOT NULL
+);
 CREATE TABLE [dbo].[system_user_roles] (
   [key_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_package_guid] UNIQUEIDENTIFIER NULL,
@@ -295,7 +306,7 @@ CREATE TABLE [dbo].[system_workflow_history] (
   [ref_principal_guid] UNIQUEIDENTIFIER NULL,
   [ref_status_enum_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_disposition_enum_guid] UNIQUEIDENTIFIER NOT NULL,
-  [ref_actor_guid] UNIQUEIDENTIFIER NULL,
+  [ref_actor_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_context_guid] UNIQUEIDENTIFIER NULL,
   [pub_name] NVARCHAR(64) NOT NULL,
   [pub_batch_number] BIGINT NOT NULL,
@@ -313,7 +324,7 @@ CREATE TABLE [dbo].[system_workflow_queue] (
   [ref_definition_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_status_enum_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_disposition_enum_guid] UNIQUEIDENTIFIER NOT NULL,
-  [ref_principal_guid] UNIQUEIDENTIFIER NULL,
+  [ref_principal_guid] UNIQUEIDENTIFIER NOT NULL,
   [ref_context_guid] UNIQUEIDENTIFIER NULL,
   [pub_batch_number] BIGINT NOT NULL,
   [pub_steps] NVARCHAR(MAX) NOT NULL,
@@ -690,9 +701,9 @@ VALUES
 INSERT INTO [dbo].[service_packages_manifest]
   (key_guid, ref_package_guid, pub_name, pub_version, pub_last_version, pub_is_sealed)
 VALUES
-  ('F1954052-001D-5818-90DC-1953ADA7ABA1', 'F1954052-001D-5818-90DC-1953ADA7ABA1', 'core', '0.2.2', NULL, 1),
-  ('3051B31E-E885-52A0-A68A-2643EF82A8EC', '3051B31E-E885-52A0-A68A-2643EF82A8EC', 'setup', '0.2.2', NULL, 1),
-  ('7E203E54-5538-5C0F-B6E5-D276DCD04C36', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'kernel', '0.2.2', '0.1.1', 1);
+  ('F1954052-001D-5818-90DC-1953ADA7ABA1', 'F1954052-001D-5818-90DC-1953ADA7ABA1', 'core', '0.2.3', '0.2.2', 0),
+  ('3051B31E-E885-52A0-A68A-2643EF82A8EC', '3051B31E-E885-52A0-A68A-2643EF82A8EC', 'setup', '0.2.3', '0.2.2', 0),
+  ('7E203E54-5538-5C0F-B6E5-D276DCD04C36', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'kernel', '0.2.3', '0.2.2', 0);
 
 -- contracts_primitives_enum_types seed
 INSERT INTO [etg].[contracts_primitives_enum_types]
@@ -703,6 +714,7 @@ VALUES
   ('19F0846A-4C48-5430-8449-2FAE34791294', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'denial_reason', 'Why a layer refused. One row per refusal in system_security_denials.'),
   ('E171D014-E371-5B40-B757-2FB33D6A7C61', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'task_disposition', 'Undo semantics of a workflow instance: REVERSIBLE, IRREVERSIBLE, TRANSIENT, CANCELLABLE. Orthogonal to retry.'),
   ('23AD5199-726E-5DCC-8CEC-33B699A987CC', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'task_status', 'Workflow instance lifecycle: PENDING, RUNNING, COMPLETE, FAILED, CANCELLING.'),
+  ('67B8EE11-53CD-5290-B652-4D613356BB9E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'identity_provider', 'The provider that proved an identity: the issuer of a system_user_identities row.'),
   ('4BE7C586-9847-5925-90A3-5071D8228F26', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'constraint_kind', 'Database constraint kinds: PRIMARY_KEY, FOREIGN_KEY, UNIQUE, CHECK.'),
   ('F5539B3E-417C-5A95-BF9B-592B97369B40', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'schema_source', 'Origin of a generated schema view: PRIMARY (live introspection) or GENERATED (from contracts_db_* rows).'),
   ('4F18B834-5FBA-5BBB-91EB-6A06770E5337', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'cloudhost_engine', 'The platform an entry point launches the process on.'),
@@ -722,11 +734,13 @@ VALUES
   ('843555AB-F2BD-5CCA-AEBF-08C3519D6685', 'E171D014-E371-5B40-B757-2FB33D6A7C61', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'CANCELLABLE', 3, 'May be cancelled before or during execution without a compensating task.'),
   ('B0D3359F-7388-55ED-810C-09033F4C276D', 'A3F43D12-E26A-5B69-9CE3-AD2192C7DD64', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'STARTING', 0, 'Registered at kernel startup; the application is not yet sealed.'),
   ('57F37618-1A3E-5D30-88CB-095E1DC91492', '89BF8DE1-413E-582E-8D15-9629A883F6DA', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'NO_ACTION', 0, 'Engine default. No clause emitted.'),
+  ('49702C56-2BFE-59A7-9895-0A7F8FC8DE81', '67B8EE11-53CD-5290-B652-4D613356BB9E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'ENTRA', 5, 'A Microsoft Entra work or school account: the subject is the object id, the tenant is the directory.'),
   ('4A3BEA0A-490B-5C4E-8B61-0C06FC48D9D6', '4F18B834-5FBA-5BBB-91EB-6A06770E5337', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'ACA', 3, 'Azure Container Apps.'),
   ('1C1EF0D5-C3AE-57C0-B1B5-0E1E5D9E820F', '02B7BD50-AF73-5DB3-98B0-B1FC187E9B4B', 'F1954052-001D-5818-90DC-1953ADA7ABA1', 'ENTRA_TENANT', 2, 'A Microsoft Entra tenant.'),
   ('FACAE3A1-DE97-5D4C-9EC8-0F209B1E58FC', '75CDADC0-7A2F-582D-9580-E67CB5B4CCA1', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'SETUP', 6, 'Setup mode or an installer script.'),
   ('0FEBB2D7-F55C-592C-88F5-179772136B4F', '4F18B834-5FBA-5BBB-91EB-6A06770E5337', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'AKS', 4, 'Azure Kubernetes Service.'),
   ('DABC9F21-2FE3-5948-B5D0-187CE3E5DC35', '1CDD672E-B1CE-5C8D-A386-7C4A26ACAB8B', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'INHERITS', 1, 'The module is a subclass of the dependency and implements its declared functions.'),
+  ('07B3D010-854D-5B5A-A9C4-20E070E06FC6', '67B8EE11-53CD-5290-B652-4D613356BB9E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'MICROSOFT', 1, 'A Microsoft personal account (the consumers tenant): the subject is the object id of home_account_id.'),
   ('916C02CA-6389-5145-9FD9-2DC9B2C4FE5B', '5E1DE2D2-E1F3-5B20-A126-7CFF92741146', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'EXECUTOR', 1, 'Executor slot: dispatch behind a manager (Execution, Management).'),
   ('4C4ADD75-0A5B-53D1-AB0E-2EEBBC143B0E', '5E1DE2D2-E1F3-5B20-A126-7CFF92741146', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'PRIMITIVE', 5, 'Primitive slot: a standalone module with no executor that serves system or service data (configuration, enumerations, environment, logging); with MANAGER, the only role RPC may dispatch to.'),
   ('C761A53C-DCED-5FF6-94E0-39D926B02E16', 'E171D014-E371-5B40-B757-2FB33D6A7C61', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'TRANSIENT', 2, 'No persistent effect; safe to discard mid-execution.'),
@@ -747,12 +761,14 @@ VALUES
   ('EA0EAF92-84DE-56F3-9D6A-70973BF6B26D', 'F3A8534E-EBEA-5F52-804C-0BBEA2B03A41', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'STRICT', 0, 'One number per call, issued and audited in one transaction; no gaps at issue.'),
   ('59C1933F-C216-5F32-A7C9-70A883287B8D', '89BF8DE1-413E-582E-8D15-9629A883F6DA', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'CASCADE', 1, 'Delete or update of parent triggers same operation on children.'),
   ('9A534DC0-3083-55DF-A5A0-727EDEEAC090', '19F0846A-4C48-5430-8449-2FAE34791294', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'REVOKED', 6, 'The grant or session was revoked.'),
+  ('06BCD3C9-0105-5AA4-BC95-73AC3245976C', '67B8EE11-53CD-5290-B652-4D613356BB9E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'APPLE', 4, 'An Apple account.'),
   ('4291EA63-A8B4-59E2-B724-7B506A8D6A09', '23AD5199-726E-5DCC-8CEC-33B699A987CC', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'FAILED', 3, 'Execution failed; pub_error holds the detail. Re-declaration flips it back to PENDING when attempts remain.'),
   ('46BF744F-5E16-5A8A-B16A-7C7F8F9C7253', '44EAB4BA-5937-5F90-8143-213C306AB08E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'SERVICE', 3, 'The service automation account: infrastructure work, unsealed.'),
   ('38358AA0-B911-5794-8E61-7D7A6E8E5582', 'A3F43D12-E26A-5B69-9CE3-AD2192C7DD64', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'RELOADING', 3, 'Written by the workflow side onto a sealed host; the host observes it, drains and exits, and the host runtime restarts it.'),
   ('A8EC52A6-F222-519B-894C-843AAB11C909', '064879DE-A840-5EF8-8939-E86A2CF8D69B', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'DELETE', 3, 'A record was removed.'),
   ('1423E34D-C5EF-5E09-9303-8C6EEE569D5D', '75CDADC0-7A2F-582D-9580-E67CB5B4CCA1', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'WORKFLOW', 4, 'A workflow run.'),
   ('7FA001CC-D978-5589-869D-8D957D1F31A9', '5E1DE2D2-E1F3-5B20-A126-7CFF92741146', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'SERVICE', 4, 'Service slot: a kernel service that exists before and around the modules (LifecycleManager, ModuleManager). Listed and mapped, never loaded as a module.'),
+  ('5CB5AE41-CD7C-590C-8DEC-8E39B462E220', '67B8EE11-53CD-5290-B652-4D613356BB9E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'DISCORD', 3, 'A Discord account.'),
   ('C12C3474-7CC8-537F-8BD8-94F86B636D6A', '44EAB4BA-5937-5F90-8143-213C306AB08E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'INTERACTIVE', 1, 'A person; the only kind Auth will log in.'),
   ('30C42C94-D7CA-5A8B-9231-97E28C4B4065', '75CDADC0-7A2F-582D-9580-E67CB5B4CCA1', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'DISCORD', 3, 'The Discord gateway.'),
   ('543313DE-AF0F-581B-8DC5-99EB9892C865', '23AD5199-726E-5DCC-8CEC-33B699A987CC', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'PENDING', 0, 'Declared, awaiting claim by the workflow worker.'),
@@ -780,6 +796,7 @@ VALUES
   ('773A1E54-BDC0-58E3-B3A2-D8296F00E9ED', '4BE7C586-9847-5925-90A3-5071D8228F26', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'UNIQUE', 2, 'Unique constraint. Columns via constraint_columns junction.'),
   ('3FF26BAD-8734-50D7-A839-D8E987A36671', '23AD5199-726E-5DCC-8CEC-33B699A987CC', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'COMPLETE', 2, 'Executed successfully. Terminal.'),
   ('6816DA40-9AD2-519E-8A31-DA5C610C6B4F', 'A3F43D12-E26A-5B69-9CE3-AD2192C7DD64', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'DRAINING', 2, 'The kernel is draining: modules stop accepting work ahead of shutdown.'),
+  ('A60FB0BA-489A-5CEA-9924-DD9AE7A24210', '67B8EE11-53CD-5290-B652-4D613356BB9E', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'GOOGLE', 2, 'A Google account.'),
   ('DB9904DD-A011-5FD5-A6BC-E8518750B09A', '19F0846A-4C48-5430-8449-2FAE34791294', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'NO_GRANT', 3, 'The decoration holds no role or entitlement the term requires.'),
   ('CA80FA79-BB9D-5FE9-A599-EE4617363A62', '19F0846A-4C48-5430-8449-2FAE34791294', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'DISABLED_ACCOUNT', 7, 'The account is disabled.'),
   ('5F6E0F13-4804-594B-9F2C-F662F0BD68E3', '19F0846A-4C48-5430-8449-2FAE34791294', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'MALFORMED_OP', 5, 'The op string does not parse as a URN.'),
@@ -792,7 +809,7 @@ GO
 INSERT INTO [dbo].[service_system_configuration]
   (key_guid, ref_package_guid, pub_key, pub_value)
 VALUES
-  ('518CD840-0D12-5601-84EF-87FA6FA0E67F', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'database_version', '0.2.2');
+  ('518CD840-0D12-5601-84EF-87FA6FA0E67F', '7E203E54-5538-5C0F-B6E5-D276DCD04C36', 'database_version', '0.2.3');
 GO
 
 -- Indexes
@@ -800,6 +817,7 @@ CREATE NONCLUSTERED INDEX [IX_so_kind] ON [dbo].[system_organizations] ([ref_kin
 CREATE NONCLUSTERED INDEX [IX_cplmf_model_guid] ON [etg].[contracts_primitives_libraries_models_fields] ([ref_model_guid]);
 CREATE NONCLUSTERED INDEX [IX_cmd_kind] ON [etg].[contracts_modules_dependencies] ([ref_kind_enum_guid]);
 CREATE NONCLUSTERED INDEX [IX_cmd_module_guid] ON [etg].[contracts_modules_dependencies] ([ref_module_guid]);
+CREATE NONCLUSTERED INDEX [IX_sui_user] ON [dbo].[system_user_identities] ([ref_user_guid]);
 CREATE NONCLUSTERED INDEX [IX_sdc_guild] ON [dbo].[system_discord_channels] ([ref_guild_guid]);
 CREATE NONCLUSTERED INDEX [IX_sdc_user] ON [dbo].[system_discord_channels] ([ref_user_guid]);
 CREATE NONCLUSTERED INDEX [IX_cplh_library_guid] ON [etg].[contracts_primitives_libraries_hashes] ([ref_library_guid]);
@@ -859,6 +877,8 @@ ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [PK_contracts_
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [UQ_cmd_module_dependency] UNIQUE NONCLUSTERED ([ref_module_guid], [ref_dependency_guid]);
 ALTER TABLE [etg].[contracts_urn_namespaces] ADD CONSTRAINT [PK_contracts_urn_namespaces] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [etg].[contracts_urn_namespaces] ADD CONSTRAINT [UQ_cun_name] UNIQUE NONCLUSTERED ([pub_name]);
+ALTER TABLE [dbo].[system_user_identities] ADD CONSTRAINT [PK_system_user_identities] PRIMARY KEY CLUSTERED ([key_guid]);
+ALTER TABLE [dbo].[system_user_identities] ADD CONSTRAINT [UQ_sui_provider_subject] UNIQUE NONCLUSTERED ([ref_provider_enum_guid], [pub_subject]);
 ALTER TABLE [etg].[contracts_components] ADD CONSTRAINT [PK_contracts_components] PRIMARY KEY CLUSTERED ([key_guid]);
 ALTER TABLE [etg].[contracts_components] ADD CONSTRAINT [UQ_cc_name] UNIQUE NONCLUSTERED ([pub_name]);
 ALTER TABLE [dbo].[system_discord_channels] ADD CONSTRAINT [PK_system_discord_channels] PRIMARY KEY CLUSTERED ([key_guid]);
@@ -971,6 +991,9 @@ ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [FK_cmd_module
 ALTER TABLE [etg].[contracts_modules_dependencies] ADD CONSTRAINT [FK_cmd_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_urn_namespaces] ADD CONSTRAINT [FK_cun_module] FOREIGN KEY ([ref_module_guid]) REFERENCES [etg].[contracts_modules] ([key_guid]);
 ALTER TABLE [etg].[contracts_urn_namespaces] ADD CONSTRAINT [FK_cun_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[system_user_identities] ADD CONSTRAINT [FK_sui_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [dbo].[system_user_identities] ADD CONSTRAINT [FK_sui_provider] FOREIGN KEY ([ref_provider_enum_guid]) REFERENCES [etg].[contracts_primitives_enums] ([key_guid]);
+ALTER TABLE [dbo].[system_user_identities] ADD CONSTRAINT [FK_sui_user] FOREIGN KEY ([ref_user_guid]) REFERENCES [dbo].[system_users] ([key_guid]);
 ALTER TABLE [etg].[contracts_components] ADD CONSTRAINT [FK_cc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [dbo].[system_discord_channels] ADD CONSTRAINT [FK_sdc_guild] FOREIGN KEY ([ref_guild_guid]) REFERENCES [dbo].[system_discord_guilds] ([key_guid]);
 ALTER TABLE [dbo].[system_discord_channels] ADD CONSTRAINT [FK_sdc_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
@@ -1031,6 +1054,7 @@ ALTER TABLE [etg].[contracts_modules_functions] ADD CONSTRAINT [FK_cmf_input_mod
 ALTER TABLE [etg].[contracts_modules_functions] ADD CONSTRAINT [FK_cmf_module] FOREIGN KEY ([ref_module_guid]) REFERENCES [etg].[contracts_modules] ([key_guid]);
 ALTER TABLE [etg].[contracts_modules_functions] ADD CONSTRAINT [FK_cmf_output_model] FOREIGN KEY ([ref_output_model_guid]) REFERENCES [etg].[contracts_modules_models] ([key_guid]);
 ALTER TABLE [etg].[contracts_modules_functions] ADD CONSTRAINT [FK_cmf_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
+ALTER TABLE [etg].[contracts_db_constraints] ADD CONSTRAINT [FK_cdco_kind] FOREIGN KEY ([ref_kind_enum_guid]) REFERENCES [etg].[contracts_primitives_enums] ([key_guid]);
 ALTER TABLE [etg].[contracts_db_constraints] ADD CONSTRAINT [FK_cdco_package] FOREIGN KEY ([ref_package_guid]) REFERENCES [dbo].[service_packages_manifest] ([key_guid]) ON DELETE CASCADE;
 ALTER TABLE [etg].[contracts_db_constraints] ADD CONSTRAINT [FK_cdco_ref_table] FOREIGN KEY ([ref_referenced_table_guid]) REFERENCES [etg].[contracts_db_tables] ([key_guid]);
 ALTER TABLE [etg].[contracts_db_constraints] ADD CONSTRAINT [FK_cdco_table] FOREIGN KEY ([ref_table_guid]) REFERENCES [etg].[contracts_db_tables] ([key_guid]);

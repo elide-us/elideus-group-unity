@@ -3,7 +3,7 @@ from abc import abstractmethod
 
 from pydantic import BaseModel
 
-from server.kernel import BaseProvider, BaseWorker
+from server.kernel import BaseProvider, BaseWorker, SecurityContext
 from server.kernel.database_operations_module import DatabaseOperationsModule
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -37,19 +37,20 @@ class ServiceHost(BaseModel):
 # Provider contract for the HOST REGISTRY (service_hosts). One registry
 # operation per verb, each a single statement the kernel commits, so every
 # call is atomic by itself. A write that affects any number of rows other
-# than one is an error, raised, never swallowed.
+# than one is an error, raised, never swallowed. Every verb takes the
+# security context its statement runs under first.
 #
-#   register(key_guid, status, host_name, pid, kernel_version) -> None
+#   register(context, key_guid, status, host_name, pid, kernel_version, entrypoint_guid) -> None
 #                                 the process's own row, STARTING
-#   seal(key_guid, status, core_package_guid) -> None
+#   seal(context, key_guid, status, core_package_guid) -> None
 #                                 SEALED, stamping the core manifest version it sealed with
-#   set_status(key_guid, status) -> None        DRAINING, STOPPED
-#   heartbeat(key_guid) -> None
-#   read(key_guid) -> ServiceHost | None
-#   release_stale(stopped, grace_seconds) -> int
+#   set_status(context, key_guid, status) -> None        DRAINING, STOPPED
+#   heartbeat(context, key_guid) -> None
+#   read(context, key_guid) -> ServiceHost | None
+#   release_stale(context, stopped, grace_seconds) -> int
 #                                 every row not STOPPED whose heartbeat is older than the
 #                                 grace period becomes STOPPED
-#   reload(key_guid, reloading, sealed) -> None
+#   reload(context, key_guid, reloading, sealed) -> None
 #                                 a SEALED row becomes RELOADING; the workflow side's one write
 # ----------------------------------------------------------------------------
 
@@ -66,31 +67,31 @@ class BaseKernelHostProvider(BaseProvider):
     pass
 
   @abstractmethod
-  async def register(self, key_guid: str, status: str, host_name: str, pid: int, kernel_version: str) -> None:
+  async def register(self, context: SecurityContext, key_guid: str, status: str, host_name: str, pid: int, kernel_version: str, entrypoint_guid: str) -> None:
     pass
 
   @abstractmethod
-  async def seal(self, key_guid: str, status: str, core_package_guid: str) -> None:
+  async def seal(self, context: SecurityContext, key_guid: str, status: str, core_package_guid: str) -> None:
     pass
 
   @abstractmethod
-  async def set_status(self, key_guid: str, status: str) -> None:
+  async def set_status(self, context: SecurityContext, key_guid: str, status: str) -> None:
     pass
 
   @abstractmethod
-  async def heartbeat(self, key_guid: str) -> None:
+  async def heartbeat(self, context: SecurityContext, key_guid: str) -> None:
     pass
 
   @abstractmethod
-  async def read(self, key_guid: str) -> ServiceHost | None:
+  async def read(self, context: SecurityContext, key_guid: str) -> ServiceHost | None:
     pass
 
   @abstractmethod
-  async def release_stale(self, stopped: str, grace_seconds: int) -> int:
+  async def release_stale(self, context: SecurityContext, stopped: str, grace_seconds: int) -> int:
     pass
 
   @abstractmethod
-  async def reload(self, key_guid: str, reloading: str, sealed: str) -> None:
+  async def reload(self, context: SecurityContext, key_guid: str, reloading: str, sealed: str) -> None:
     pass
 
 
